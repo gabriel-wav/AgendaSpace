@@ -8,35 +8,56 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* AgendaSpace Design System - Professional & Modern */
+    --background: 250 100% 99%;
+    --foreground: 222 84% 4.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 84% 4.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary Blue - Professional & Trustworthy */
+    --primary: 217 91% 60%;  /* Blue-600 #2563eb */
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 217 100% 95%;
+    --primary-dark: 217 91% 45%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary Slate - Professional neutral */
+    --secondary: 215 25% 27%;  /* Slate-600 #475569 */
+    --secondary-foreground: 0 0% 100%;
+    --secondary-light: 215 20% 95%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Success Green */
+    --success: 160 84% 39%;  /* Green-500 #10b981 */
+    --success-foreground: 0 0% 100%;
+    --success-light: 160 100% 95%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Warning Yellow */
+    --warning: 48 96% 53%;  /* Yellow-500 #eab308 */
+    --warning-foreground: 222 84% 4.9%;
+    --warning-light: 48 100% 95%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Error Red */
+    --error: 0 84% 60%;  /* Red-500 #ef4444 */
+    --error-foreground: 0 0% 100%;
+    --error-light: 0 100% 95%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Neutral grays */
+    --muted: 220 13% 91%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 220 13% 95%;
+    --accent-foreground: 222 84% 4.9%;
 
-    --radius: 0.5rem;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 98%;
 
