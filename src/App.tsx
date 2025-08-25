@@ -16,6 +16,7 @@ import AdminSpaces from "./pages/admin/Spaces";
 import AdminBookings from "./pages/admin/Bookings";
 import UserSpaces from "./pages/user/Spaces";
 import UserMyBookings from "./pages/user/MyBookings";
+import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +58,13 @@ const App = () => (
             <Route path="/my-bookings" element={
               <ProtectedRoute>
                 <UserMyBookings />
+              </ProtectedRoute>
+            } />
+            
+            {/* Settings Route */}
+            <Route path="/settings" element={
+              <ProtectedRoute>
+                <Settings />
               </ProtectedRoute>
             } />
             

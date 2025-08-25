@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Search, Filter, Building2, MapPin, Users, DollarSign } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { BookingForm } from '@/components/booking/BookingForm';
 
 interface Space {
   id: string;
@@ -31,6 +32,7 @@ export default function UserSpaces() {
   const [resourceFilter, setResourceFilter] = useState<string>('all');
   const [selectedSpace, setSelectedSpace] = useState<Space | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showBookingForm, setShowBookingForm] = useState(false);
   const { toast } = useToast();
 
   const availableResources = ['wifi', 'projetor', 'quadro-branco', 'ar-condicionado', 'som', 'palco', 'computadores'];
@@ -253,7 +255,14 @@ export default function UserSpaces() {
                     >
                       Ver Detalhes
                     </Button>
-                    <Button size="sm" className="flex-1">
+                    <Button 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedSpace(space);
+                        setShowBookingForm(true);
+                      }}
+                    >
                       Reservar
                     </Button>
                   </div>
@@ -284,7 +293,9 @@ export default function UserSpaces() {
         )}
 
         {/* Space Details Modal */}
-        <Dialog open={!!selectedSpace} onOpenChange={() => setSelectedSpace(null)}>
+        <Dialog open={!!selectedSpace && !showBookingForm} onOpenChange={(open) => {
+          if (!open) setSelectedSpace(null);
+        }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{selectedSpace?.name}</DialogTitle>
@@ -346,11 +357,30 @@ export default function UserSpaces() {
                   <Button variant="outline" onClick={() => setSelectedSpace(null)} className="flex-1">
                     Fechar
                   </Button>
-                  <Button className="flex-1">
+                  <Button 
+                    className="flex-1"
+                    onClick={() => setShowBookingForm(true)}
+                  >
                     Reservar Agora
                   </Button>
                 </div>
               </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Booking Form Modal */}
+        <Dialog open={showBookingForm} onOpenChange={setShowBookingForm}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            {selectedSpace && (
+              <BookingForm
+                space={selectedSpace}
+                onSuccess={() => {
+                  setShowBookingForm(false);
+                  setSelectedSpace(null);
+                }}
+                onCancel={() => setShowBookingForm(false)}
+              />
             )}
           </DialogContent>
         </Dialog>
