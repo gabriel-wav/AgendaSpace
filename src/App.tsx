@@ -12,6 +12,11 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
+import AdminSpaces from "./pages/admin/Spaces";
+import AdminBookings from "./pages/admin/Bookings";
+import UserSpaces from "./pages/user/Spaces";
+import UserMyBookings from "./pages/user/MyBookings";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -30,6 +35,31 @@ const App = () => (
                 <Dashboard />
               </ProtectedRoute>
             } />
+            
+            {/* Admin Routes */}
+            <Route path="/admin/spaces" element={
+              <ProtectedRoute requireAdmin>
+                <AdminSpaces />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/bookings" element={
+              <ProtectedRoute requireAdmin>
+                <AdminBookings />
+              </ProtectedRoute>
+            } />
+            
+            {/* User Routes */}
+            <Route path="/spaces" element={
+              <ProtectedRoute>
+                <UserSpaces />
+              </ProtectedRoute>
+            } />
+            <Route path="/my-bookings" element={
+              <ProtectedRoute>
+                <UserMyBookings />
+              </ProtectedRoute>
+            } />
+            
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

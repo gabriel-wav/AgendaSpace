@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar, MapPin, Clock, Search, Plus, Building2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
+import { Link } from 'react-router-dom';
 
 export function UserDashboard() {
   const { profile } = useAuth();
@@ -71,10 +72,12 @@ export function UserDashboard() {
               Encontre e reserve o espaço perfeito para suas necessidades
             </p>
           </div>
-          <Button>
-            <Search className="mr-2 h-4 w-4" />
-            Buscar Espaços
-          </Button>
+          <Link to="/spaces">
+            <Button>
+              <Search className="mr-2 h-4 w-4" />
+              Buscar Espaços
+            </Button>
+          </Link>
         </div>
 
         {/* Quick Stats */}
@@ -167,10 +170,12 @@ export function UserDashboard() {
                 <p className="text-muted-foreground mb-4">
                   Você ainda não tem reservas. Que tal explorar nossos espaços?
                 </p>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Fazer Primeira Reserva
-                </Button>
+                <Link to="/spaces">
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Fazer Primeira Reserva
+                  </Button>
+                </Link>
               </div>
             )}
           </CardContent>

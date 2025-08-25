@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Building2, Calendar, DollarSign, Users, Plus, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Link } from 'react-router-dom';
 
 export function AdminDashboard() {
   // Mock data for demonstration
@@ -31,10 +32,12 @@ export function AdminDashboard() {
               Visão geral da gestão de espaços e reservas
             </p>
           </div>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Espaço
-          </Button>
+          <Link to="/admin/spaces">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Espaço
+            </Button>
+          </Link>
         </div>
 
         {/* Stats Cards */}
@@ -169,14 +172,18 @@ export function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button variant="outline" className="h-20 flex-col gap-2">
-                <Building2 className="h-6 w-6" />
-                Gerenciar Espaços
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2">
-                <Calendar className="h-6 w-6" />
-                Ver Agenda
-              </Button>
+              <Link to="/admin/spaces">
+                <Button variant="outline" className="h-20 flex-col gap-2 w-full">
+                  <Building2 className="h-6 w-6" />
+                  Gerenciar Espaços
+                </Button>
+              </Link>
+              <Link to="/admin/bookings">
+                <Button variant="outline" className="h-20 flex-col gap-2 w-full">
+                  <Calendar className="h-6 w-6" />
+                  Ver Agenda
+                </Button>
+              </Link>
               <Button variant="outline" className="h-20 flex-col gap-2">
                 <Users className="h-6 w-6" />
                 Gerenciar Usuários
