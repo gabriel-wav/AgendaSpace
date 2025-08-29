@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,11 +8,36 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { BookingForm } from '@/components/booking/BookingForm';
+import { supabase } from '@/integrations/supabase/client';
 
 export function UserDashboard() {
   const { profile } = useAuth();
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [selectedSpace, setSelectedSpace] = useState<any>(null);
+  const [spaces, setSpaces] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real spaces from database
+  useEffect(() => {
+    const fetchSpaces = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('spaces')
+          .select('*')
+          .eq('is_active', true)
+          .limit(3);
+        
+        if (error) throw error;
+        setSpaces(data || []);
+      } catch (error) {
+        console.error('Error fetching spaces:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSpaces();
+  }, []);
 
   // Mock data for demonstration
   const upcomingBookings = [
@@ -33,33 +58,6 @@ export function UserDashboard() {
       status: 'pending',
       capacity: 6,
       resources: ['wifi', 'quadro-branco']
-    },
-  ];
-
-  const popularSpaces = [
-    { 
-      id: 1, 
-      name: 'Auditório Principal', 
-      capacity: 100, 
-      price: 200,
-      image: '/api/placeholder/300/200',
-      available: true
-    },
-    { 
-      id: 2, 
-      name: 'Sala de Treinamento', 
-      capacity: 20, 
-      price: 80,
-      image: '/api/placeholder/300/200',
-      available: true
-    },
-    { 
-      id: 3, 
-      name: 'Sala de Reunião B', 
-      capacity: 12, 
-      price: 60,
-      image: '/api/placeholder/300/200',
-      available: false
     },
   ];
 
@@ -253,19 +251,23 @@ export function UserDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {popularSpaces.map((space) => (
-                <div key={space.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-                  <div className="h-32 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                    <Building2 className="h-12 w-12 text-primary" />
-                  </div>
-                  <div className="p-4">
-                    <h3 className="font-medium mb-2">{space.name}</h3>
-                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
-                      <span>{space.capacity} pessoas</span>
-                      <span className="font-medium text-foreground">R$ {space.price}/h</span>
+            {loading ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">Carregando espaços...</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {spaces.map((space) => (
+                  <div key={space.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                    <div className="h-32 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                      <Building2 className="h-12 w-12 text-primary" />
                     </div>
-                    {space.available ? (
+                    <div className="p-4">
+                      <h3 className="font-medium mb-2">{space.name}</h3>
+                      <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
+                        <span>{space.capacity} pessoas</span>
+                        <span className="font-medium text-foreground">R$ {space.price_per_hour}/h</span>
+                      </div>
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button 
@@ -283,31 +285,23 @@ export function UserDashboard() {
                           {selectedSpace && (
                             <BookingForm 
                               space={{
-                                id: selectedSpace.id.toString(),
+                                id: selectedSpace.id,
                                 name: selectedSpace.name,
-                                description: '',
+                                description: selectedSpace.description || '',
                                 capacity: selectedSpace.capacity,
-                                price_per_hour: selectedSpace.price,
-                                resources: []
+                                price_per_hour: selectedSpace.price_per_hour,
+                                resources: selectedSpace.resources || []
                               }}
                               onSuccess={() => setSelectedSpace(null)}
                             />
                           )}
                         </DialogContent>
                       </Dialog>
-                    ) : (
-                      <Button 
-                        size="sm" 
-                        className="w-full"
-                        disabled
-                      >
-                        Indisponível
-                      </Button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
