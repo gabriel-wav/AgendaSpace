@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Clock, MapPin, Eye, Edit, X } from 'lucide-react';
+import { Calendar, Clock, MapPin, Eye, Edit, X, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
@@ -32,6 +33,7 @@ export default function MyBookings() {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
@@ -239,11 +241,17 @@ export default function MyBookings() {
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Minhas Reservas</h1>
-          <p className="text-muted-foreground mt-1">
-            Gerencie todas as suas reservas de espaços
-          </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Minhas Reservas</h1>
+            <p className="text-muted-foreground mt-1">
+              Gerencie todas as suas reservas de espaços
+            </p>
+          </div>
+          <Button onClick={() => navigate('/user/spaces')} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            Fazer Nova Reserva
+          </Button>
         </div>
 
         {/* Stats */}
@@ -293,7 +301,7 @@ export default function MyBookings() {
                   <p className="text-muted-foreground mb-4">
                     Você não tem reservas agendadas para os próximos dias.
                   </p>
-                  <Button>Fazer Nova Reserva</Button>
+                  <Button onClick={() => navigate('/user/spaces')}>Fazer Nova Reserva</Button>
                 </CardContent>
               </Card>
             )}
