@@ -230,7 +230,7 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
   );
 
   const availableEndTimes = startTime ? timeSlots.filter(slot => 
-    slot.hour > parseInt(startTime) && slot.hour <= 22
+    slot.hour > parseInt(startTime) && slot.hour <= 22 && slot.available
   ) : [];
 
   return (
@@ -302,41 +302,76 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
 
           {/* Time Selection */}
           {selectedDate && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Horário de Início</Label>
-                <select
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md"
-                  required
-                >
-                  <option value="">Selecione</option>
-                  {availableStartTimes.map((slot) => (
-                    <option key={slot.hour} value={slot.hour}>
-                      {formatTime(slot.hour)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Horário de Início</Label>
+                  <select
+                    value={startTime}
+                    onChange={(e) => {
+                      setStartTime(e.target.value);
+                      setEndTime(''); // Reset end time when start time changes
+                    }}
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                    required
+                  >
+                    <option value="">Selecione o horário de início</option>
+                    {availableStartTimes.map((slot) => (
+                      <option key={slot.hour} value={slot.hour}>
+                        {formatTime(slot.hour)}
+                      </option>
+                    ))}
+                  </select>
+                  {availableStartTimes.length === 0 && (
+                    <p className="text-xs text-destructive">Não há horários disponíveis para esta data</p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label>Horário de Fim</Label>
-                <select
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md"
-                  required
-                  disabled={!startTime}
-                >
-                  <option value="">Selecione</option>
-                  {availableEndTimes.map((slot) => (
-                    <option key={slot.hour} value={slot.hour}>
-                      {formatTime(slot.hour)}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Horário de Fim</Label>
+                  <select
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                    required
+                    disabled={!startTime}
+                  >
+                    <option value="">
+                      {!startTime ? "Primeiro selecione o início" : "Selecione o horário de fim"}
                     </option>
-                  ))}
-                </select>
+                    {availableEndTimes.map((slot) => (
+                      <option key={slot.hour} value={slot.hour}>
+                        {formatTime(slot.hour)}
+                      </option>
+                    ))}
+                  </select>
+                  {startTime && availableEndTimes.length === 0 && (
+                    <p className="text-xs text-destructive">Não há horários de fim disponíveis</p>
+                  )}
+                </div>
               </div>
+              
+              {/* Available Slots Preview */}
+              {availableStartTimes.length > 0 && (
+                <div className="p-3 bg-muted/30 rounded-lg">
+                  <h4 className="text-sm font-medium mb-2">Horários disponíveis hoje:</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {availableStartTimes.slice(0, 8).map((slot) => (
+                      <span 
+                        key={slot.hour} 
+                        className="text-xs px-2 py-1 bg-primary/10 text-primary rounded"
+                      >
+                        {formatTime(slot.hour)}
+                      </span>
+                    ))}
+                    {availableStartTimes.length > 8 && (
+                      <span className="text-xs text-muted-foreground">
+                        +{availableStartTimes.length - 8} mais
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

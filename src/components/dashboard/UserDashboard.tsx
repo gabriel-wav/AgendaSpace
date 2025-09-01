@@ -101,8 +101,8 @@ export function UserDashboard() {
               <MapPin className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12</div>
-              <p className="text-xs text-muted-foreground">Para hoje</p>
+              <div className="text-2xl font-bold">{spaces.length}</div>
+              <p className="text-xs text-muted-foreground">Cadastrados</p>
             </CardContent>
           </Card>
 

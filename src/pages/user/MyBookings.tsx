@@ -203,7 +203,16 @@ export default function MyBookings() {
           </div>
 
           <div className="flex flex-col gap-2 ml-4">
-            <Button size="sm" variant="ghost">
+            <Button 
+              size="sm" 
+              variant="ghost"
+              onClick={() => {
+                toast({
+                  title: "Detalhes da Reserva",
+                  description: `${booking.spaces?.name} - ${format(new Date(booking.start_datetime), "dd/MM/yyyy HH:mm")}`,
+                });
+              }}
+            >
               <Eye className="h-4 w-4" />
             </Button>
             {canCancelBooking(booking) && (
