@@ -325,10 +325,20 @@ export default function Bookings() {
                             variant="outline"
                             onClick={() => updateBookingStatus(booking.id, 'completed')}
                           >
-                            Concluir
+                            Marcar como Realizada
                           </Button>
                         )}
-                        <Button size="sm" variant="ghost">
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => {
+                            toast({
+                              title: "Detalhes da Reserva",
+                              description: `Reserva de ${booking.profiles?.full_name} para ${booking.spaces?.name} em ${format(new Date(booking.start_datetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`
+                            });
+                          }}
+                          title="Ver detalhes"
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
                       </div>
