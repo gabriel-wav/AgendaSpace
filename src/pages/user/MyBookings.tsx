@@ -248,7 +248,7 @@ export default function MyBookings() {
               Gerencie todas as suas reservas de espaços
             </p>
           </div>
-          <Button onClick={() => navigate('/user/spaces')} className="flex items-center gap-2">
+          <Button onClick={() => navigate('/spaces')} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Fazer Nova Reserva
           </Button>
@@ -301,7 +301,7 @@ export default function MyBookings() {
                   <p className="text-muted-foreground mb-4">
                     Você não tem reservas agendadas para os próximos dias.
                   </p>
-                  <Button onClick={() => navigate('/user/spaces')}>Fazer Nova Reserva</Button>
+                  <Button onClick={() => navigate('/spaces')}>Fazer Nova Reserva</Button>
                 </CardContent>
               </Card>
             )}
