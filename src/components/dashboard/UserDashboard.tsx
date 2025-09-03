@@ -2,64 +2,99 @@ import React, { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, MapPin, Clock, Search, Plus, Building2, Eye } from 'lucide-react';
+import { Calendar, MapPin, Clock, Search, Plus, Building2, Eye, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { BookingForm } from '@/components/booking/BookingForm';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 export function UserDashboard() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  const { toast } = useToast();
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [selectedSpace, setSelectedSpace] = useState<any>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    upcomingBookings: 0,
+    totalHours: 0,
+    availableSpaces: 0
+  });
   const [loading, setLoading] = useState(true);
 
-  // Fetch real spaces from database
+  // Fetch real data from database
   useEffect(() => {
-    const fetchSpaces = async () => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
       try {
-        const { data, error } = await supabase
+        // Fetch spaces
+        const { data: spacesData, error: spacesError } = await supabase
           .from('spaces')
           .select('*')
           .eq('is_active', true)
           .limit(3);
         
-        if (error) throw error;
-        setSpaces(data || []);
-      } catch (error) {
-        console.error('Error fetching spaces:', error);
+        if (spacesError) throw spacesError;
+        setSpaces(spacesData || []);
+
+        // Fetch user bookings
+        const { data: bookingsData, error: bookingsError } = await supabase
+          .from('bookings')
+          .select(`
+            *,
+            spaces (
+              name,
+              capacity,
+              resources
+            )
+          `)
+          .eq('user_id', user.id)
+          .gte('start_datetime', new Date().toISOString())
+          .order('start_datetime', { ascending: true })
+          .limit(5);
+
+        if (bookingsError) throw bookingsError;
+        setBookings(bookingsData || []);
+
+        // Calculate stats
+        const totalSpacesResult = await supabase
+          .from('spaces')
+          .select('*', { count: 'exact' })
+          .eq('is_active', true);
+        
+        const totalHours = bookingsData?.reduce((acc, booking) => {
+          const start = new Date(booking.start_datetime);
+          const end = new Date(booking.end_datetime);
+          const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+          return acc + hours;
+        }, 0) || 0;
+
+        setStats({
+          upcomingBookings: bookingsData?.length || 0,
+          totalHours: Math.round(totalHours),
+          availableSpaces: totalSpacesResult.count || 0
+        });
+
+      } catch (error: any) {
+        toast({
+          title: "Erro ao carregar dados",
+          description: error.message,
+          variant: "destructive"
+        });
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSpaces();
-  }, []);
+    fetchData();
+  }, [user?.id, toast]);
 
-  // Mock data for demonstration
-  const upcomingBookings = [
-    { 
-      id: 1, 
-      space: 'Sala de Reunião A', 
-      date: '2024-08-23', 
-      time: '09:00 - 11:00', 
-      status: 'confirmed',
-      capacity: 8,
-      resources: ['wifi', 'projetor']
-    },
-    { 
-      id: 2, 
-      space: 'Sala Criativa', 
-      date: '2024-08-25', 
-      time: '14:00 - 16:00', 
-      status: 'pending',
-      capacity: 6,
-      resources: ['wifi', 'quadro-branco']
-    },
-  ];
 
   return (
     <AppLayout>
@@ -90,8 +125,8 @@ export function UserDashboard() {
               <Calendar className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{upcomingBookings.length}</div>
-              <p className="text-xs text-muted-foreground">Nos próximos 7 dias</p>
+              <div className="text-2xl font-bold">{stats.upcomingBookings}</div>
+              <p className="text-xs text-muted-foreground">Confirmadas</p>
             </CardContent>
           </Card>
 
@@ -101,8 +136,8 @@ export function UserDashboard() {
               <MapPin className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{spaces.length}</div>
-              <p className="text-xs text-muted-foreground">Cadastrados</p>
+              <div className="text-2xl font-bold">{stats.availableSpaces}</div>
+              <p className="text-xs text-muted-foreground">Disponíveis para reserva</p>
             </CardContent>
           </Card>
 
@@ -112,8 +147,8 @@ export function UserDashboard() {
               <Clock className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">24h</div>
-              <p className="text-xs text-muted-foreground">Este mês</p>
+              <div className="text-2xl font-bold">{stats.totalHours}h</div>
+              <p className="text-xs text-muted-foreground">Próximas reservas</p>
             </CardContent>
           </Card>
         </div>
@@ -130,31 +165,43 @@ export function UserDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {upcomingBookings.length > 0 ? (
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Carregando reservas...</p>
+              </div>
+            ) : bookings.length > 0 ? (
               <div className="space-y-4">
-                {upcomingBookings.map((booking) => (
+                {bookings.map((booking) => (
                   <div key={booking.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                     <div className="flex-1">
-                      <h3 className="font-medium">{booking.space}</h3>
+                      <h3 className="font-medium">{booking.spaces?.name}</h3>
                       <p className="text-sm text-muted-foreground">
-                        {new Date(booking.date).toLocaleDateString('pt-BR')} • {booking.time}
+                        {format(new Date(booking.start_datetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} - {format(new Date(booking.end_datetime), "HH:mm", { locale: ptBR })}
                       </p>
                       <div className="flex items-center gap-2 mt-2">
                         <span className="text-xs bg-muted px-2 py-1 rounded">
-                          {booking.capacity} pessoas
+                          {booking.spaces?.capacity} pessoas
                         </span>
-                        {booking.resources.map((resource) => (
+                        {booking.spaces?.resources?.slice(0, 2).map((resource: string) => (
                           <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
                             {resource}
                           </span>
                         ))}
+                        {booking.spaces?.resources?.length > 2 && (
+                          <span className="text-xs bg-muted px-2 py-1 rounded">
+                            +{booking.spaces.resources.length - 2}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">
                       <Badge 
-                        variant={booking.status === 'confirmed' ? 'default' : 'secondary'}
+                        variant={booking.status === 'confirmed' ? 'default' : booking.status === 'pending' ? 'secondary' : 'outline'}
                       >
-                        {booking.status === 'confirmed' ? 'Confirmado' : 'Pendente'}
+                        {booking.status === 'confirmed' ? 'Confirmado' : 
+                         booking.status === 'pending' ? 'Pendente' : 
+                         booking.status === 'completed' ? 'Realizado' : 'Cancelado'}
                       </Badge>
                       <div className="mt-2">
                         <Dialog>
@@ -175,43 +222,54 @@ export function UserDashboard() {
                             {selectedBooking && (
                               <div className="space-y-4">
                                 <div>
-                                  <h3 className="font-medium text-lg">{selectedBooking.space}</h3>
+                                  <h3 className="font-medium text-lg">{selectedBooking.spaces?.name}</h3>
                                   <p className="text-muted-foreground">
-                                    {new Date(selectedBooking.date).toLocaleDateString('pt-BR')}
+                                    {format(new Date(selectedBooking.start_datetime), "dd/MM/yyyy", { locale: ptBR })}
                                   </p>
                                 </div>
                                 
                                 <div className="grid grid-cols-2 gap-4">
                                   <div>
                                     <p className="text-sm font-medium">Horário</p>
-                                    <p className="text-sm text-muted-foreground">{selectedBooking.time}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {format(new Date(selectedBooking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(selectedBooking.end_datetime), "HH:mm", { locale: ptBR })}
+                                    </p>
                                   </div>
                                   <div>
-                                    <p className="text-sm font-medium">Capacidade</p>
-                                    <p className="text-sm text-muted-foreground">{selectedBooking.capacity} pessoas</p>
+                                    <p className="text-sm font-medium">Preço Total</p>
+                                    <p className="text-sm text-muted-foreground">R$ {selectedBooking.total_price}</p>
                                   </div>
                                 </div>
 
                                 <div>
                                   <p className="text-sm font-medium mb-2">Recursos</p>
                                   <div className="flex flex-wrap gap-1">
-                                    {selectedBooking.resources.map((resource: string) => (
+                                    {selectedBooking.spaces?.resources?.map((resource: string) => (
                                       <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
                                         {resource}
                                       </span>
-                                    ))}
+                                    )) || <span className="text-xs text-muted-foreground">Nenhum recurso específico</span>}
                                   </div>
                                 </div>
 
                                 <div>
                                   <p className="text-sm font-medium">Status</p>
                                   <Badge 
-                                    variant={selectedBooking.status === 'confirmed' ? 'default' : 'secondary'}
+                                    variant={selectedBooking.status === 'confirmed' ? 'default' : selectedBooking.status === 'pending' ? 'secondary' : 'outline'}
                                     className="mt-1"
                                   >
-                                    {selectedBooking.status === 'confirmed' ? 'Confirmado' : 'Pendente'}
+                                    {selectedBooking.status === 'confirmed' ? 'Confirmado' : 
+                                     selectedBooking.status === 'pending' ? 'Pendente' : 
+                                     selectedBooking.status === 'completed' ? 'Realizado' : 'Cancelado'}
                                   </Badge>
                                 </div>
+
+                                {selectedBooking.notes && (
+                                  <div>
+                                    <p className="text-sm font-medium">Observações</p>
+                                    <p className="text-sm text-muted-foreground">{selectedBooking.notes}</p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </DialogContent>
