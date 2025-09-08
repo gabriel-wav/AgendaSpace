@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Plus, Pencil, Trash2, Building2, Search, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { FileUpload } from '@/components/ui/file-upload';
+import { useFileUpload } from '@/hooks/useFileUpload';
 
 interface Space {
   id: string;
@@ -30,7 +32,9 @@ export default function Spaces() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSpace, setEditingSpace] = useState<Space | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const { toast } = useToast();
+  const { uploadFile, uploading } = useFileUpload({ bucket: 'spaces' });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -70,13 +74,23 @@ export default function Spaces() {
     e.preventDefault();
     
     try {
+      let imageUrl = formData.image_url;
+      
+      // Upload da nova imagem se selecionada
+      if (imageFile) {
+        const uploadedUrl = await uploadFile(imageFile);
+        if (uploadedUrl) {
+          imageUrl = uploadedUrl;
+        }
+      }
+
       const spaceData = {
         name: formData.name,
         description: formData.description,
         capacity: parseInt(formData.capacity),
         price_per_hour: parseFloat(formData.price_per_hour),
         resources: formData.resources.split(',').map(r => r.trim()).filter(Boolean),
-        image_url: formData.image_url || null,
+        image_url: imageUrl || null,
         is_active: formData.is_active,
       };
 
@@ -107,6 +121,7 @@ export default function Spaces() {
 
       await fetchSpaces();
       resetForm();
+      setImageFile(null);
       setIsDialogOpen(false);
     } catch (error: any) {
       toast({
@@ -168,6 +183,7 @@ export default function Spaces() {
       is_active: true,
     });
     setEditingSpace(null);
+    setImageFile(null);
   };
 
   const filteredSpaces = spaces.filter(space =>
@@ -248,27 +264,36 @@ export default function Spaces() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="price">Preço por Hora (R$)</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      step="0.01"
-                      value={formData.price_per_hour}
-                      onChange={(e) => setFormData({...formData, price_per_hour: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="image_url">URL da Imagem</Label>
-                    <Input
-                      id="image_url"
-                      type="url"
-                      value={formData.image_url}
-                      onChange={(e) => setFormData({...formData, image_url: e.target.value})}
-                    />
-                  </div>
+                <div>
+                  <Label htmlFor="price">Preço por Hora (R$)</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    value={formData.price_per_hour}
+                    onChange={(e) => setFormData({...formData, price_per_hour: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <FileUpload
+                  accept="image/*"
+                  maxSize={10}
+                  onFileSelect={setImageFile}
+                  preview={imageFile ? URL.createObjectURL(imageFile) : formData.image_url}
+                  label="Imagem do Espaço"
+                  description="Selecione uma imagem para o espaço (JPG, PNG ou WEBP)"
+                />
+
+                <div>
+                  <Label htmlFor="image_url">Ou insira URL da Imagem</Label>
+                  <Input
+                    id="image_url"
+                    type="url"
+                    value={formData.image_url}
+                    onChange={(e) => setFormData({...formData, image_url: e.target.value})}
+                    placeholder="https://exemplo.com/imagem.jpg"
+                  />
                 </div>
 
                 <div>
@@ -294,8 +319,8 @@ export default function Spaces() {
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancelar
                   </Button>
-                  <Button type="submit">
-                    {editingSpace ? 'Atualizar' : 'Criar'} Espaço
+                  <Button type="submit" disabled={uploading}>
+                    {uploading ? 'Salvando...' : editingSpace ? 'Atualizar' : 'Criar'} Espaço
                   </Button>
                 </div>
               </form>

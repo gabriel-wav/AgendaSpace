@@ -8,22 +8,26 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Lock, Bell, Shield, Save, Camera } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { FileUpload } from '@/components/ui/file-upload';
+import { useFileUpload } from '@/hooks/useFileUpload';
 
 export default function Settings() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const { uploadFile, uploading } = useFileUpload({ bucket: 'avatars' });
   const [profileData, setProfileData] = useState({
     full_name: profile?.full_name || '',
     email: profile?.email || '',
     bio: '',
     phone: '',
-    avatar_url: ''
+    avatar_url: profile?.avatar_url || ''
   });
 
   const [notifications, setNotifications] = useState({
@@ -46,7 +50,7 @@ export default function Settings() {
         email: profile.email || '',
         bio: '',
         phone: '',
-        avatar_url: ''
+        avatar_url: profile.avatar_url || ''
       });
     }
   }, [profile]);
@@ -54,16 +58,28 @@ export default function Settings() {
   const handleSaveProfile = async () => {
     setLoading(true);
     try {
+      let updatedData: any = {
+        full_name: profileData.full_name,
+        email: profileData.email
+      };
+
+      // Se há um novo avatar para upload
+      if (avatarFile && user?.id) {
+        const avatarUrl = await uploadFile(avatarFile, user.id);
+        if (avatarUrl) {
+          updatedData.avatar_url = avatarUrl;
+          setProfileData(prev => ({ ...prev, avatar_url: avatarUrl }));
+        }
+      }
+
       const { error } = await supabase
         .from('profiles')
-        .update({
-          full_name: profileData.full_name,
-          email: profileData.email
-        })
+        .update(updatedData)
         .eq('id', user?.id);
 
       if (error) throw error;
 
+      setAvatarFile(null);
       toast({
         title: "Perfil atualizado",
         description: "Suas informações foram salvas com sucesso."
@@ -115,22 +131,35 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Avatar Section */}
-                <div className="flex items-center space-x-4">
-                  <Avatar className="h-20 w-20">
-                    <AvatarFallback className="bg-primary text-primary-foreground text-lg">
-                      {profileData.full_name ? getInitials(profileData.full_name) : 'U'}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-medium">Foto do Perfil</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Escolha uma imagem para seu perfil. Recomendamos imagens quadradas.
-                    </p>
-                    <Button variant="outline" size="sm">
-                      <Camera className="mr-2 h-4 w-4" />
-                      Alterar Foto
-                    </Button>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-4">
+                    <Avatar className="h-20 w-20">
+                      {(profileData.avatar_url || avatarFile) && (
+                        <AvatarImage 
+                          src={avatarFile ? URL.createObjectURL(avatarFile) : profileData.avatar_url} 
+                          alt="Avatar"
+                        />
+                      )}
+                      <AvatarFallback className="bg-primary text-primary-foreground text-lg">
+                        {profileData.full_name ? getInitials(profileData.full_name) : 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-medium">Foto do Perfil</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Escolha uma imagem para seu perfil. Recomendamos imagens quadradas.
+                      </p>
+                    </div>
                   </div>
+                  
+                  <FileUpload
+                    accept="image/*"
+                    maxSize={5}
+                    onFileSelect={setAvatarFile}
+                    preview={avatarFile ? URL.createObjectURL(avatarFile) : undefined}
+                    label="Upload de Avatar"
+                    description="Selecione uma foto de perfil (JPG, PNG ou WEBP)"
+                  />
                 </div>
 
                 <Separator />
@@ -184,9 +213,9 @@ export default function Settings() {
                   />
                 </div>
 
-                <Button onClick={handleSaveProfile} disabled={loading}>
+                <Button onClick={handleSaveProfile} disabled={loading || uploading}>
                   <Save className="mr-2 h-4 w-4" />
-                  {loading ? 'Salvando...' : 'Salvar Alterações'}
+                  {(loading || uploading) ? 'Salvando...' : 'Salvar Alterações'}
                 </Button>
               </CardContent>
             </Card>
