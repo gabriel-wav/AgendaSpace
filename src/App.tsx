@@ -14,6 +14,8 @@ import NotFound from "./pages/NotFound";
 
 import AdminSpaces from "./pages/admin/Spaces";
 import AdminBookings from "./pages/admin/Bookings";
+import AdminUsers from "./pages/admin/Users";
+import AdminReports from "./pages/admin/Reports";
 import UserSpaces from "./pages/user/Spaces";
 import UserMyBookings from "./pages/user/MyBookings";
 import Settings from "./pages/Settings";
@@ -46,6 +48,16 @@ const App = () => (
             <Route path="/admin/bookings" element={
               <ProtectedRoute requireAdmin>
                 <AdminBookings />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/users" element={
+              <ProtectedRoute requireAdmin>
+                <AdminUsers />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/reports" element={
+              <ProtectedRoute requireAdmin>
+                <AdminReports />
               </ProtectedRoute>
             } />
             

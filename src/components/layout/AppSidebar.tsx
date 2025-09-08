@@ -38,7 +38,7 @@ export function AppSidebar() {
   const userItems = [
     { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, description: 'Visão geral' },
     { title: 'Buscar Espaços', url: '/spaces', icon: MapPin, description: 'Encontre espaços' },
-    { title: 'Minhas Reservas', url: '/user/my-bookings', icon: Calendar, description: 'Gerencie reservas' },
+    { title: 'Minhas Reservas', url: '/my-bookings', icon: Calendar, description: 'Gerencie reservas' },
   ];
 
   const items = isAdmin ? adminItems : userItems;
