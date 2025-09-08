@@ -306,12 +306,6 @@ export default function Bookings() {
                           <>
                             <Button
                               size="sm"
-                              onClick={() => updateBookingStatus(booking.id, 'confirmed')}
-                            >
-                              Confirmar
-                            </Button>
-                            <Button
-                              size="sm"
                               variant="outline"
                               onClick={() => updateBookingStatus(booking.id, 'cancelled')}
                             >

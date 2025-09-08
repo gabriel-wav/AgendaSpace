@@ -48,14 +48,29 @@ ALTER TABLE public.spaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for profiles
-CREATE POLICY "Users can view own profile" ON public.profiles 
-FOR SELECT USING (auth.uid() = id);
+-- Enable Row Level Security
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.spaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for profiles
+CREATE POLICY "Users can view own profile or admins can view all" ON public.profiles
+FOR SELECT USING (auth.uid() = id OR public.is_admin());
 
 CREATE POLICY "Users can update own profile" ON public.profiles 
 FOR UPDATE USING (auth.uid() = id);
 
 CREATE POLICY "Users can insert own profile" ON public.profiles 
 FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Create security definer function to check admin role
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+$$ LANGUAGE SQL SECURITY DEFINER STABLE;
 
 -- Create security definer function to check admin role
 CREATE OR REPLACE FUNCTION public.is_admin()

@@ -4,13 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Clock, MapPin, Eye, Edit, X, Plus } from 'lucide-react';
+import { Calendar, Clock, MapPin, Eye, Edit, X, Plus, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog } from '@/components/ui/dialog';
+import { PaymentDialog } from '@/components/booking/PaymentDialog';
 
 interface Booking {
   id: string;
@@ -31,6 +33,7 @@ interface Booking {
 export default function MyBookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [paymentBooking, setPaymentBooking] = useState<Booking | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -203,6 +206,12 @@ export default function MyBookings() {
           </div>
 
           <div className="flex flex-col gap-2 ml-4">
+                        {booking.status === 'pending' && (
+              <Button size="sm" onClick={() => setPaymentBooking(booking)}>
+                 <DollarSign className="mr-2 h-4 w-4" />
+                Pagar para Confirmar
+              </Button>
+            )}
             <Button 
               size="sm" 
               variant="ghost"
@@ -222,7 +231,8 @@ export default function MyBookings() {
                 onClick={() => cancelBooking(booking.id)}
                 className="text-destructive hover:text-destructive"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 mr-1" />
+                <span>{booking.status === 'pending' ? 'Cancelar Pedido' : 'Cancelar Reserva'}</span>
               </Button>
             )}
           </div>
@@ -349,6 +359,18 @@ export default function MyBookings() {
           </TabsContent>
         </Tabs>
       </div>
+         <Dialog open={!!paymentBooking} onOpenChange={(open) => !open && setPaymentBooking(null)}>
+         {paymentBooking && (
+           <PaymentDialog
+             booking={paymentBooking}
+             onSuccess={() => {
+               setPaymentBooking(null);
+               fetchBookings();
+             }}
+             onCancel={() => setPaymentBooking(null)}
+           />
+         )}
+       </Dialog>
     </AppLayout>
   );
 }
