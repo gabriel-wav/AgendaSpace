@@ -147,9 +147,49 @@ export default function Spaces() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este espaço?')) return;
-
     try {
+      // Verificar se existem reservas associadas ao espaço
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('id, status')
+        .eq('space_id', id);
+
+      if (bookingsError) throw bookingsError;
+
+      if (bookings && bookings.length > 0) {
+        const activeBookings = bookings.filter(booking => booking.status !== 'cancelled');
+        
+        if (activeBookings.length > 0) {
+          const shouldDeleteWithBookings = confirm(
+            `Este espaço possui ${bookings.length} reserva(s) associada(s), sendo ${activeBookings.length} ativa(s). ` +
+            'Ao excluir o espaço, todas as reservas associadas também serão excluídas. ' +
+            'Tem certeza que deseja continuar?'
+          );
+          
+          if (!shouldDeleteWithBookings) return;
+        } else {
+          const shouldDelete = confirm(
+            `Este espaço possui ${bookings.length} reserva(s) cancelada(s) associada(s). ` +
+            'Ao excluir o espaço, essas reservas também serão excluídas. ' +
+            'Tem certeza que deseja continuar?'
+          );
+          
+          if (!shouldDelete) return;
+        }
+
+        // Deletar todas as reservas associadas primeiro
+        const { error: deleteBookingsError } = await supabase
+          .from('bookings')
+          .delete()
+          .eq('space_id', id);
+
+        if (deleteBookingsError) throw deleteBookingsError;
+      } else {
+        // Se não há reservas, apenas confirmar a exclusão do espaço
+        if (!confirm('Tem certeza que deseja excluir este espaço?')) return;
+      }
+
+      // Deletar o espaço
       const { error } = await supabase
         .from('spaces')
         .delete()
@@ -159,7 +199,7 @@ export default function Spaces() {
 
       toast({
         title: "Espaço excluído",
-        description: "O espaço foi excluído com sucesso."
+        description: "O espaço e suas reservas associadas foram excluídos com sucesso."
       });
 
       await fetchSpaces();
