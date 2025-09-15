@@ -4,6 +4,8 @@ AgendaSpace é uma plataforma completa e intuitiva para a gestão inteligente de
 
 **🚀 Link Site Publicado:** [https://agenda-space.vercel.app/](https://agenda-space.vercel.app/)
 
+**🎥 Vídeo Demonstração:** [https://drive.google.com/file/d/1hw5_MUbcGn4807LvWwtNBhWdivPVq272/view?usp=drive_link](https://drive.google.com/file/d/1hw5_MUbcGn4807LvWwtNBhWdivPVq272/view?usp=drive_link)
+
 ---
 
 ## ✨ Funcionalidades Implementadas
@@ -132,4 +134,17 @@ npm run dev
 ```
 
 O projeto estará disponível em `http://localhost:8080` (ou outra porta, se a 8080 estiver em uso).
+
+---
+
+## 👨‍💻 Autores
+
+Este projeto foi desenvolvido e é mantido por:
+
+* **Gabriel** - [GitHub: @gabriel-wav](https://github.com/gabriel-wav)
+* **Danilo** - [GitHub: @danilinhotj187](https://github.com/danilinhotj187)
+* **Antonio** - [GitHub: @Antoniojferreira3](https://github.com/Antoniojferreira3)
+* **Pedro** - [GitHub: @pedroH901](https://github.com/pedroH901)
+
+
 
