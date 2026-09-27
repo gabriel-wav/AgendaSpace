@@ -5,19 +5,20 @@ import { RegisterForm } from '@/components/auth/RegisterForm';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Register() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user && profile) {
+    if (user) {
       navigate('/dashboard');
     }
-  }, [user, profile, navigate]);
+  }, [user, navigate]);
 
   return (
     <AuthLayout
-      title="Cadastrar"
-      description="Crie sua conta no AgendaSpace"
+      imageSide="left"
+      quote="Cada espaço conta uma história. Deixe a sua começar aqui."
+      quoteAuthor="AgendaSpace — Para quem cria e para quem reserva"
     >
       <RegisterForm />
     </AuthLayout>

@@ -1,18 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Building2, Search, Filter } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Plus,
+  Search,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Building2,
+  ImagePlus,
+  X,
+  Loader2,
+  Users,
+  Banknote,
+} from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { FileUpload } from '@/components/ui/file-upload';
-import { useFileUpload } from '@/hooks/useFileUpload';
+import { cn } from '@/lib/utils';
+
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface Space {
   id: string;
@@ -26,17 +56,75 @@ interface Space {
   created_at: string;
 }
 
-export default function Spaces() {
-  const [spaces, setSpaces] = useState<Space[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingSpace, setEditingSpace] = useState<Space | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const { toast } = useToast();
-  const { uploadFile, uploading } = useFileUpload({ bucket: 'spaces' });
+// ─── Primitives ─────────────────────────────────────────────────────────────
 
-  const [formData, setFormData] = useState({
+/** Dot badge — green/red, no filled block */
+function StatusDot({ active }: { active: boolean }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span
+        className={cn(
+          'inline-block h-1.5 w-1.5 rounded-full',
+          active ? 'bg-success' : 'bg-muted-foreground/40'
+        )}
+      />
+      {active ? 'Ativo' : 'Inativo'}
+    </span>
+  );
+}
+
+/** Square thumbnail with fallback icon */
+function SpaceThumbnail({ imageUrl, name }: { imageUrl?: string; name: string }) {
+  if (imageUrl) {
+    return (
+      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-border/60 bg-muted">
+        <img src={imageUrl} alt={name} className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted">
+      <Building2 className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.5} />
+    </div>
+  );
+}
+
+/** Flushed input */
+const inputCls = cn(
+  'w-full rounded-md bg-zinc-100 dark:bg-zinc-900 px-3 py-2 text-sm text-foreground',
+  'placeholder:text-muted-foreground/40 border-0 outline-none',
+  'ring-1 ring-transparent focus:ring-ring transition-all duration-150'
+);
+
+/** Flushed label */
+function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-1.5"
+    >
+      {children}
+    </label>
+  );
+}
+
+// ─── SpaceSheet (create / edit) ─────────────────────────────────────────────
+
+interface SpaceSheetProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  editing: Space | null;
+  onSaved: () => void;
+}
+
+function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
+  const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [form, setForm] = useState({
     name: '',
     description: '',
     capacity: '',
@@ -46,444 +134,591 @@ export default function Spaces() {
     is_active: true,
   });
 
+  // Populate when editing changes
   useEffect(() => {
-    fetchSpaces();
-  }, []);
+    if (editing) {
+      setForm({
+        name: editing.name,
+        description: editing.description ?? '',
+        capacity: String(editing.capacity),
+        price_per_hour: String(editing.price_per_hour),
+        resources: editing.resources.join(', '),
+        image_url: editing.image_url ?? '',
+        is_active: editing.is_active,
+      });
+      setImagePreview(editing.image_url ?? null);
+    } else {
+      setForm({ name: '', description: '', capacity: '', price_per_hour: '', resources: '', image_url: '', is_active: true });
+      setImagePreview(null);
+    }
+    setImageFile(null);
+  }, [editing, open]);
+
+  const field = (key: keyof typeof form) => (v: string) =>
+    setForm((f) => ({ ...f, [key]: v }));
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    try {
+      let imageUrl = form.image_url;
+
+      // TODO: Replace with your upload logic
+      if (imageFile) {
+        // imageUrl = await uploadToStorage(imageFile);
+        imageUrl = URL.createObjectURL(imageFile); // placeholder
+      }
+
+      const payload = {
+        name: form.name,
+        description: form.description,
+        capacity: parseInt(form.capacity),
+        price_per_hour: parseFloat(form.price_per_hour),
+        resources: form.resources.split(',').map((r) => r.trim()).filter(Boolean),
+        image_url: imageUrl || null,
+        is_active: form.is_active,
+      };
+
+      if (editing) {
+        const { error } = await supabase.from('spaces').update(payload).eq('id', editing.id);
+        if (error) throw error;
+        toast({ title: 'Espaço atualizado com sucesso.' });
+      } else {
+        const { error } = await supabase.from('spaces').insert([payload]);
+        if (error) throw error;
+        toast({ title: 'Espaço criado com sucesso.' });
+      }
+
+      onSaved();
+      onOpenChange(false);
+    } catch (err: any) {
+      toast({ title: 'Erro ao salvar', description: err.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-md overflow-y-auto border-l border-border/60 bg-background p-0"
+      >
+        {/* Sheet header */}
+        <SheetHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur-md border-b border-border/60 px-6 py-4">
+          <SheetTitle className="text-base font-semibold tracking-tight">
+            {editing ? 'Editar espaço' : 'Novo espaço'}
+          </SheetTitle>
+          <SheetDescription className="text-xs text-muted-foreground">
+            {editing
+              ? 'Altere os dados do espaço abaixo.'
+              : 'Preencha os dados para cadastrar um novo espaço.'}
+          </SheetDescription>
+        </SheetHeader>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5 px-6 py-6">
+          {/* Image upload */}
+          <div>
+            <FieldLabel htmlFor="image">Imagem</FieldLabel>
+            {imagePreview ? (
+              <div className="relative overflow-hidden rounded-md border border-border/60 bg-muted">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="w-full h-40 object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setImageFile(null); setImagePreview(null); setForm((f) => ({ ...f, image_url: '' })); }}
+                  className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed border-border/60 py-6 text-muted-foreground/50 hover:border-border hover:text-muted-foreground transition-all duration-150"
+              >
+                <ImagePlus className="h-5 w-5" strokeWidth={1.5} />
+                <span className="text-xs">Clique para adicionar uma imagem</span>
+              </button>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+          </div>
+
+          {/* Name */}
+          <div>
+            <FieldLabel htmlFor="name">Nome do espaço</FieldLabel>
+            <input
+              id="name"
+              className={inputCls}
+              value={form.name}
+              onChange={(e) => field('name')(e.target.value)}
+              placeholder="Ex: Sala de Reuniões Premium"
+              required
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <FieldLabel htmlFor="description">Descrição</FieldLabel>
+            <textarea
+              id="description"
+              className={cn(inputCls, 'resize-none leading-relaxed')}
+              rows={3}
+              value={form.description}
+              onChange={(e) => field('description')(e.target.value)}
+              placeholder="Descreva o espaço brevemente…"
+            />
+          </div>
+
+          {/* Capacity + Price */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="capacity">Capacidade</FieldLabel>
+              <input
+                id="capacity"
+                type="number"
+                min={1}
+                className={inputCls}
+                value={form.capacity}
+                onChange={(e) => field('capacity')(e.target.value)}
+                placeholder="Ex: 20"
+                required
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="price">Preço/hora (R$)</FieldLabel>
+              <input
+                id="price"
+                type="number"
+                step="0.01"
+                min={0}
+                className={inputCls}
+                value={form.price_per_hour}
+                onChange={(e) => field('price_per_hour')(e.target.value)}
+                placeholder="Ex: 150.00"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Resources */}
+          <div>
+            <FieldLabel htmlFor="resources">Recursos</FieldLabel>
+            <input
+              id="resources"
+              className={inputCls}
+              value={form.resources}
+              onChange={(e) => field('resources')(e.target.value)}
+              placeholder="wifi, projetor, quadro-branco"
+            />
+            <p className="mt-1.5 text-[11px] text-muted-foreground/50">
+              Separe os recursos por vírgula.
+            </p>
+          </div>
+
+          {/* Active toggle */}
+          <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Espaço ativo</p>
+              <p className="text-xs text-muted-foreground">Disponível para reservas</p>
+            </div>
+            <Switch
+              id="is_active"
+              checked={form.is_active}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-2 border-t border-border/40">
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="flex-1 rounded-md py-2 text-sm text-muted-foreground hover:text-foreground transition-colors duration-150"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className={cn(
+                'flex-1 rounded-md py-2 text-sm font-medium',
+                'bg-foreground text-background',
+                'transition-opacity duration-150 hover:opacity-85 active:opacity-70',
+                'disabled:cursor-not-allowed disabled:opacity-40',
+              )}
+            >
+              {saving ? (
+                <span className="inline-flex items-center gap-2 justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Salvando…
+                </span>
+              ) : (
+                editing ? 'Salvar alterações' : 'Criar espaço'
+              )}
+            </button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ─── SpaceRow ────────────────────────────────────────────────────────────────
+
+interface SpaceRowProps {
+  space: Space;
+  onEdit: (s: Space) => void;
+  onDelete: (id: string) => void;
+  onToggleActive: (s: Space) => void;
+}
+
+function SpaceRow({ space, onEdit, onDelete, onToggleActive }: SpaceRowProps) {
+  const resources = Array.isArray(space.resources) ? space.resources : [];
+
+  return (
+    <div className="group flex items-center gap-4 border-b border-zinc-200/50 dark:border-zinc-800/50 px-4 py-4 transition-colors duration-100 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/30">
+      {/* Thumbnail */}
+      <SpaceThumbnail imageUrl={space.image_url} name={space.name} />
+
+      {/* Main info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-foreground truncate">{space.name}</span>
+          <StatusDot active={space.is_active} />
+        </div>
+        {space.description && (
+          <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-sm">
+            {space.description}
+          </p>
+        )}
+        {resources.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {resources.slice(0, 4).map((r) => (
+              <span
+                key={r}
+                className="inline-block rounded border border-border/60 px-1.5 py-px text-[10px] text-muted-foreground"
+              >
+                {r}
+              </span>
+            ))}
+            {resources.length > 4 && (
+              <span className="text-[10px] text-muted-foreground/50">
+                +{resources.length - 4} mais
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Meta columns */}
+      <div className="hidden sm:flex items-center gap-6 shrink-0">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
+          <span>{space.capacity}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Banknote className="h-3.5 w-3.5" strokeWidth={1.5} />
+          <span>
+            {Number(space.price_per_hour).toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}
+            <span className="text-muted-foreground/50">/h</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Actions — 3-dot menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all duration-100 outline-none"
+            aria-label="Ações do espaço"
+          >
+            <MoreVertical className="h-4 w-4" strokeWidth={1.5} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44 animate-in-up" sideOffset={4}>
+          <DropdownMenuItem
+            className="gap-2 text-sm cursor-pointer"
+            onClick={() => onEdit(space)}
+          >
+            <Pencil className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+            Editar
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="gap-2 text-sm cursor-pointer"
+            onClick={() => onToggleActive(space)}
+          >
+            <span
+              className={cn(
+                'h-3.5 w-3.5 rounded-full border',
+                space.is_active ? 'border-muted-foreground/40' : 'bg-success border-success'
+              )}
+            />
+            {space.is_active ? 'Desativar' : 'Ativar'}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="gap-2 text-sm cursor-pointer text-destructive focus:text-destructive"
+            onClick={() => onDelete(space.id)}
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Excluir
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+// ─── Column header row ───────────────────────────────────────────────────────
+
+function ListHeader() {
+  return (
+    <div className="flex items-center gap-4 border-b border-border/60 px-4 py-2">
+      <div className="h-10 w-10 shrink-0" />
+      <div className="flex-1 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
+        Espaço
+      </div>
+      <div className="hidden sm:flex items-center gap-6 shrink-0">
+        <span className="w-10 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50 text-right">
+          Cap.
+        </span>
+        <span className="w-20 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50 text-right">
+          Preço/h
+        </span>
+      </div>
+      <div className="h-8 w-8 shrink-0" />
+    </div>
+  );
+}
+
+// ─── Skeleton row ────────────────────────────────────────────────────────────
+
+function SkeletonRow() {
+  return (
+    <div className="flex items-center gap-4 border-b border-zinc-200/50 dark:border-zinc-800/50 px-4 py-4">
+      <div className="h-10 w-10 shrink-0 rounded-md bg-muted animate-pulse" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3 w-32 rounded bg-muted animate-pulse" />
+        <div className="h-2.5 w-48 rounded bg-muted animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
+export default function AdminSpaces() {
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editing, setEditing] = useState<Space | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => { fetchSpaces(); }, []);
 
   const fetchSpaces = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('spaces')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (error) throw error;
-      setSpaces(data || []);
-    } catch (error: any) {
-      toast({
-        title: "Erro ao carregar espaços",
-        description: error.message,
-        variant: "destructive"
-      });
+      setSpaces(data ?? []);
+    } catch (err: any) {
+      toast({ title: 'Erro ao carregar espaços', description: err.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    try {
-      let imageUrl = formData.image_url;
-      
-      // Upload da nova imagem se selecionada
-      if (imageFile) {
-        const uploadedUrl = await uploadFile(imageFile);
-        if (uploadedUrl) {
-          imageUrl = uploadedUrl;
-        }
-      }
-
-      const spaceData = {
-        name: formData.name,
-        description: formData.description,
-        capacity: parseInt(formData.capacity),
-        price_per_hour: parseFloat(formData.price_per_hour),
-        resources: formData.resources.split(',').map(r => r.trim()).filter(Boolean),
-        image_url: imageUrl || null,
-        is_active: formData.is_active,
-      };
-
-      if (editingSpace) {
-        const { error } = await supabase
-          .from('spaces')
-          .update(spaceData)
-          .eq('id', editingSpace.id);
-
-        if (error) throw error;
-        
-        toast({
-          title: "Espaço atualizado",
-          description: "O espaço foi atualizado com sucesso."
-        });
-      } else {
-        const { error } = await supabase
-          .from('spaces')
-          .insert([spaceData]);
-
-        if (error) throw error;
-        
-        toast({
-          title: "Espaço criado",
-          description: "O espaço foi criado com sucesso."
-        });
-      }
-
-      await fetchSpaces();
-      resetForm();
-      setImageFile(null);
-      setIsDialogOpen(false);
-    } catch (error: any) {
-      toast({
-        title: "Erro ao salvar espaço",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
+  const openCreate = () => {
+    setEditing(null);
+    setSheetOpen(true);
   };
 
-  const handleEdit = (space: Space) => {
-    setEditingSpace(space);
-    setFormData({
-      name: space.name,
-      description: space.description || '',
-      capacity: space.capacity.toString(),
-      price_per_hour: space.price_per_hour.toString(),
-      resources: space.resources.join(', '),
-      image_url: space.image_url || '',
-      is_active: space.is_active,
-    });
-    setIsDialogOpen(true);
+  const openEdit = (space: Space) => {
+    setEditing(space);
+    setSheetOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleToggleActive = async (space: Space) => {
     try {
-      // Verificar se existem reservas associadas ao espaço
-      const { data: bookings, error: bookingsError } = await supabase
-        .from('bookings')
-        .select('id, status')
-        .eq('space_id', id);
-
-      if (bookingsError) throw bookingsError;
-
-      if (bookings && bookings.length > 0) {
-        const activeBookings = bookings.filter(booking => booking.status !== 'cancelled');
-        
-        if (activeBookings.length > 0) {
-          const shouldDeleteWithBookings = confirm(
-            `Este espaço possui ${bookings.length} reserva(s) associada(s), sendo ${activeBookings.length} ativa(s). ` +
-            'Ao excluir o espaço, todas as reservas associadas também serão excluídas. ' +
-            'Tem certeza que deseja continuar?'
-          );
-          
-          if (!shouldDeleteWithBookings) return;
-        } else {
-          const shouldDelete = confirm(
-            `Este espaço possui ${bookings.length} reserva(s) cancelada(s) associada(s). ` +
-            'Ao excluir o espaço, essas reservas também serão excluídas. ' +
-            'Tem certeza que deseja continuar?'
-          );
-          
-          if (!shouldDelete) return;
-        }
-
-        // Deletar todas as reservas associadas primeiro
-        const { error: deleteBookingsError } = await supabase
-          .from('bookings')
-          .delete()
-          .eq('space_id', id);
-
-        if (deleteBookingsError) throw deleteBookingsError;
-      } else {
-        // Se não há reservas, apenas confirmar a exclusão do espaço
-        if (!confirm('Tem certeza que deseja excluir este espaço?')) return;
-      }
-
-      // Deletar o espaço
       const { error } = await supabase
         .from('spaces')
-        .delete()
-        .eq('id', id);
-
+        .update({ is_active: !space.is_active })
+        .eq('id', space.id);
       if (error) throw error;
-
-      toast({
-        title: "Espaço excluído",
-        description: "O espaço e suas reservas associadas foram excluídos com sucesso."
-      });
-
-      await fetchSpaces();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao excluir espaço",
-        description: error.message,
-        variant: "destructive"
-      });
+      setSpaces((prev) =>
+        prev.map((s) => s.id === space.id ? { ...s, is_active: !s.is_active } : s)
+      );
+    } catch (err: any) {
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' });
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      capacity: '',
-      price_per_hour: '',
-      resources: '',
-      image_url: '',
-      is_active: true,
-    });
-    setEditingSpace(null);
-    setImageFile(null);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      const { error } = await supabase.from('spaces').delete().eq('id', deleteTarget);
+      if (error) throw error;
+      setSpaces((prev) => prev.filter((s) => s.id !== deleteTarget));
+      toast({ title: 'Espaço excluído com sucesso.' });
+    } catch (err: any) {
+      toast({ title: 'Erro ao excluir', description: err.message, variant: 'destructive' });
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
-  const filteredSpaces = spaces.filter(space =>
-    space.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    space.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = spaces.filter(
+    (s) =>
+      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando espaços...</p>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
+  const activeCount = spaces.filter((s) => s.is_active).length;
 
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Page header */}
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Gerenciar Espaços</h1>
-            <p className="text-muted-foreground mt-1">
-              Cadastre e gerencie todos os espaços disponíveis
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaços</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {spaces.length} espaços cadastrados · {activeCount} ativos
             </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Espaço
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingSpace ? 'Editar Espaço' : 'Novo Espaço'}
-                </DialogTitle>
-                <DialogDescription>
-                  Preencha as informações do espaço
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="name">Nome do Espaço</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="capacity">Capacidade</Label>
-                    <Input
-                      id="capacity"
-                      type="number"
-                      value={formData.capacity}
-                      onChange={(e) => setFormData({...formData, capacity: e.target.value})}
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <Label htmlFor="description">Descrição</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                    rows={3}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="price">Preço por Hora (R$)</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    step="0.01"
-                    value={formData.price_per_hour}
-                    onChange={(e) => setFormData({...formData, price_per_hour: e.target.value})}
-                    required
-                  />
-                </div>
-
-                <FileUpload
-                  accept="image/*"
-                  maxSize={10}
-                  onFileSelect={setImageFile}
-                  preview={imageFile ? URL.createObjectURL(imageFile) : formData.image_url}
-                  label="Imagem do Espaço"
-                  description="Selecione uma imagem para o espaço (JPG, PNG ou WEBP)"
-                />
-
-                <div>
-                  <Label htmlFor="image_url">Ou insira URL da Imagem</Label>
-                  <Input
-                    id="image_url"
-                    type="url"
-                    value={formData.image_url}
-                    onChange={(e) => setFormData({...formData, image_url: e.target.value})}
-                    placeholder="https://exemplo.com/imagem.jpg"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="resources">Recursos (separados por vírgula)</Label>
-                  <Input
-                    id="resources"
-                    value={formData.resources}
-                    onChange={(e) => setFormData({...formData, resources: e.target.value})}
-                    placeholder="wifi, projetor, quadro-branco"
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="is_active"
-                    checked={formData.is_active}
-                    onCheckedChange={(checked) => setFormData({...formData, is_active: checked})}
-                  />
-                  <Label htmlFor="is_active">Espaço ativo</Label>
-                </div>
-
-                <div className="flex justify-end space-x-2">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={uploading}>
-                    {uploading ? 'Salvando...' : editingSpace ? 'Atualizar' : 'Criar'} Espaço
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <button
+            onClick={openCreate}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium',
+              'bg-foreground text-background',
+              'transition-opacity duration-150 hover:opacity-85',
+            )}
+          >
+            <Plus className="h-4 w-4" strokeWidth={2} />
+            Novo espaço
+          </button>
         </div>
 
-        {/* Search and Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar espaços..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <Button variant="outline">
-                <Filter className="mr-2 h-4 w-4" />
-                Filtros
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Spaces Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredSpaces.map((space) => (
-            <Card key={space.id} className="overflow-hidden">
-              <div className="h-48 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                {space.image_url ? (
-                  <img
-                    src={space.image_url}
-                    alt={space.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <Building2 className="h-16 w-16 text-primary" />
-                )}
-              </div>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{space.name}</CardTitle>
-                    <CardDescription className="mt-1">
-                      {space.description}
-                    </CardDescription>
-                  </div>
-                  <Badge variant={space.is_active ? "default" : "secondary"}>
-                    {space.is_active ? "Ativo" : "Inativo"}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Capacidade:</span>
-                    <span className="font-medium">{space.capacity} pessoas</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Preço/hora:</span>
-                    <span className="font-medium">R$ {space.price_per_hour}</span>
-                  </div>
-                  {space.resources.length > 0 && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Recursos:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {space.resources.map((resource) => (
-                          <Badge key={resource} variant="outline" className="text-xs">
-                            {resource}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(space)}
-                      className="flex-1"
-                    >
-                      <Pencil className="mr-2 h-3 w-3" />
-                      Editar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(space.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        {/* Search bar — inline, no card wrapper */}
+        <div className="relative max-w-sm">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50"
+            strokeWidth={1.5}
+          />
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar espaços…"
+            className={cn(
+              'w-full rounded-md bg-zinc-100 dark:bg-zinc-900 pl-9 pr-3 py-2 text-sm',
+              'placeholder:text-muted-foreground/40 text-foreground',
+              'border-0 outline-none ring-1 ring-transparent focus:ring-ring transition-all duration-150',
+            )}
+          />
         </div>
 
-        {filteredSpaces.length === 0 && (
-          <Card>
-            <CardContent className="text-center py-12">
-              <Building2 className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">Nenhum espaço encontrado</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchTerm ? 'Tente alterar os filtros de busca.' : 'Comece cadastrando seu primeiro espaço.'}
+        {/* Data list */}
+        <div className="rounded-md border border-border/60 overflow-hidden">
+          <ListHeader />
+
+          {loading ? (
+            <>
+              {[...Array(5)].map((_, i) => <SkeletonRow key={i} />)}
+            </>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-20 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                <Building2 className="h-4.5 w-4.5 text-muted-foreground/50" strokeWidth={1.5} />
+              </div>
+              <p className="text-sm font-medium text-foreground">
+                {searchTerm ? 'Nenhum resultado encontrado' : 'Nenhum espaço cadastrado'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {searchTerm
+                  ? 'Tente buscar por um nome diferente.'
+                  : 'Crie seu primeiro espaço para começar.'}
               </p>
               {!searchTerm && (
-                <Button onClick={() => setIsDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Cadastrar Primeiro Espaço
-                </Button>
+                <button
+                  onClick={openCreate}
+                  className="mt-1 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-85 transition-opacity"
+                >
+                  Criar primeiro espaço
+                </button>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          ) : (
+            filtered.map((space) => (
+              <SpaceRow
+                key={space.id}
+                space={space}
+                onEdit={openEdit}
+                onDelete={(id) => setDeleteTarget(id)}
+                onToggleActive={handleToggleActive}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Count footer */}
+        {filtered.length > 0 && !loading && (
+          <p className="text-xs text-muted-foreground/50 tabular-nums">
+            {filtered.length} de {spaces.length} espaços
+          </p>
         )}
       </div>
+
+      {/* Create / Edit Sheet (slides from right) */}
+      <SpaceSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        editing={editing}
+        onSaved={fetchSpaces}
+      />
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">Excluir espaço?</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-muted-foreground">
+              Esta ação é irreversível. Todas as reservas vinculadas a este espaço também serão removidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-sm">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground text-sm hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

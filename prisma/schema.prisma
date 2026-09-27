@@ -1,0 +1,79 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Role {
+  ADMIN
+  TENANT
+  USER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  avatarUrl    String?   @map("avatar_url") @db.Text
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  spaces       Space[]
+  bookings     Booking[]
+
+  @@map("users")
+}
+
+model Space {
+  id           String    @id @default(uuid())
+  name         String
+  description  String?   @db.Text
+  capacity     Int
+  pricePerHour Decimal   @map("price_per_hour") @db.Decimal(10, 2)
+  resources    Json?
+  imageUrl     String?   @map("image_url") @db.Text
+  isActive     Boolean   @default(true) @map("is_active")
+  createdById  String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  createdBy    User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  bookings     Booking[]
+
+  @@index([createdById])
+  @@map("spaces")
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  spaceId       String        @map("space_id")
+  startDatetime DateTime      @map("start_datetime")
+  endDatetime   DateTime      @map("end_datetime")
+  totalPrice    Decimal       @map("total_price") @db.Decimal(10, 2)
+  notes         String?       @db.Text
+  status        BookingStatus @default(PENDING)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space         Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([spaceId])
+  @@map("bookings")
+}

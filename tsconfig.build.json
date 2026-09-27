@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": [
+    "src/main.ts",
+    "src/app.module.ts",
+    "src/auth/**/*.ts",
+    "src/spaces/**/*.ts",
+    "src/bookings/**/*.ts",
+    "src/feed/**/*.ts",
+    "src/prisma/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/components/**/*",
+    "src/hooks/**/*",
+    "src/pages/**/*",
+    "src/contexts/**/*",
+    "src/lib/**/*",
+    "src/integrations/**/*",
+    "src/**/*.tsx",
+    "src/main.tsx",
+    "src/vite-env.d.ts"
+  ]
+}

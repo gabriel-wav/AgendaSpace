@@ -5,29 +5,41 @@ import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  /** Require ADMIN role to access */
   requireAdmin?: boolean;
+  /** Require TENANT or ADMIN role to access */
+  requireTenant?: boolean;
 }
 
-export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
-  const { user, profile, loading } = useAuth();
+export function ProtectedRoute({
+  children,
+  requireAdmin = false,
+  requireTenant = false,
+}: ProtectedRouteProps) {
+  const { user, loading, isAdmin, isTenant } = useAuth();
   const location = useLocation();
 
+  // Waiting for token hydration on first load
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Carregando...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" strokeWidth={1.5} />
       </div>
     );
   }
 
+  // Not authenticated at all
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requireAdmin && profile?.role !== 'admin') {
+  // Route requires ADMIN role
+  if (requireAdmin && !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Route requires TENANT or ADMIN role
+  if (requireTenant && !isTenant && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 

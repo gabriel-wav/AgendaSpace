@@ -11,6 +11,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import FeedPage from "./pages/Feed";
 
 import AdminSpaces from "./pages/admin/Spaces";
 import AdminBookings from "./pages/admin/Bookings";
@@ -20,7 +21,18 @@ import UserSpaces from "./pages/user/Spaces";
 import UserMyBookings from "./pages/user/MyBookings";
 import Settings from "./pages/Settings";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Re-fetch on window focus only in production
+      refetchOnWindowFocus: import.meta.env.PROD,
+      // Retry once on failure (avoids hammering a down API)
+      retry: 1,
+      // Consider data stale after 60s by default; override per-query
+      staleTime: 60_000,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -30,16 +42,39 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
+            {/* Public routes */}
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+
+            {/* Protected — any authenticated user */}
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <Dashboard />
               </ProtectedRoute>
             } />
-            
-            {/* Admin Routes */}
+            <Route path="/spaces" element={
+              <ProtectedRoute>
+                <UserSpaces />
+              </ProtectedRoute>
+            } />
+            <Route path="/my-bookings" element={
+              <ProtectedRoute>
+                <UserMyBookings />
+              </ProtectedRoute>
+            } />
+            <Route path="/feed" element={
+              <ProtectedRoute>
+                <FeedPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/settings" element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            } />
+
+            {/* Protected — ADMIN only */}
             <Route path="/admin/spaces" element={
               <ProtectedRoute requireAdmin>
                 <AdminSpaces />
@@ -60,26 +95,7 @@ const App = () => (
                 <AdminReports />
               </ProtectedRoute>
             } />
-            
-            {/* User Routes */}
-            <Route path="/spaces" element={
-              <ProtectedRoute>
-                <UserSpaces />
-              </ProtectedRoute>
-            } />
-            <Route path="/my-bookings" element={
-              <ProtectedRoute>
-                <UserMyBookings />
-              </ProtectedRoute>
-            } />
-            
-            {/* Settings Route */}
-            <Route path="/settings" element={
-              <ProtectedRoute>
-                <Settings />
-              </ProtectedRoute>
-            } />
-            
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
