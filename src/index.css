@@ -1,126 +1,278 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/*
+ * AgendaSpace — Premium Design System
+ * Inspired by Linear, Vercel, and Raycast.
+ * Philosophy: monochromatic surfaces, razor-thin borders, high-density information, zero decorative noise.
+ * All colors are in HSL format as required by Shadcn/UI.
+ */
 
 @layer base {
   :root {
-    /* AgendaSpace Design System - Professional & Modern */
-    --background: 250 100% 99%;
-    --foreground: 222 84% 4.9%;
+    /* ─── Surfaces ─────────────────────────────────────────── */
+    --background: 0 0% 100%;          /* #FFFFFF — pure white canvas */
+    --foreground: 0 0% 7%;            /* #121212 — near-black, not harsh */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 84% 4.9%;
+    --card: 0 0% 98%;                 /* #FAFAFA — elevated surface */
+    --card-foreground: 0 0% 7%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 84% 4.9%;
+    --popover-foreground: 0 0% 7%;
 
-    /* Primary Blue - Professional & Trustworthy */
-    --primary: 217 91% 60%;  /* Blue-600 #2563eb */
+    /* ─── Primary ───────────────────────────────────────────── */
+    /* Crisp, cool blue — precise and intentional */
+    --primary: 221 83% 53%;           /* #2563EB */
     --primary-foreground: 0 0% 100%;
-    --primary-light: 217 100% 95%;
-    --primary-dark: 217 91% 45%;
+    --primary-light: 221 90% 96%;
+    --primary-dark: 221 83% 42%;
 
-    /* Secondary Slate - Professional neutral */
-    --secondary: 215 25% 27%;  /* Slate-600 #475569 */
-    --secondary-foreground: 0 0% 100%;
-    --secondary-light: 215 20% 95%;
+    /* ─── Secondary ─────────────────────────────────────────── */
+    --secondary: 0 0% 96%;            /* #F5F5F5 — barely-there surface */
+    --secondary-foreground: 0 0% 9%;
+    --secondary-light: 0 0% 98%;
 
-    /* Success Green */
-    --success: 160 84% 39%;  /* Green-500 #10b981 */
+    /* ─── Semantic states ───────────────────────────────────── */
+    --success: 142 71% 45%;           /* #22C55E */
     --success-foreground: 0 0% 100%;
-    --success-light: 160 100% 95%;
+    --success-light: 142 76% 96%;
 
-    /* Warning Yellow */
-    --warning: 48 96% 53%;  /* Yellow-500 #eab308 */
-    --warning-foreground: 222 84% 4.9%;
-    --warning-light: 48 100% 95%;
+    --warning: 38 92% 50%;            /* #F59E0B */
+    --warning-foreground: 0 0% 7%;
+    --warning-light: 48 100% 96%;
 
-    /* Error Red */
-    --error: 0 84% 60%;  /* Red-500 #ef4444 */
+    --error: 0 72% 51%;               /* #EF4444 */
     --error-foreground: 0 0% 100%;
-    --error-light: 0 100% 95%;
+    --error-light: 0 86% 97%;
 
-    /* Neutral grays */
-    --muted: 220 13% 91%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 220 13% 95%;
-    --accent-foreground: 222 84% 4.9%;
-
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 217 91% 60%;
+    /* ─── Muted / Neutral ───────────────────────────────────── */
+    --muted: 0 0% 96%;                /* #F5F5F5 */
+    --muted-foreground: 0 0% 45%;     /* #737373 — readable and subdued */
 
-    --radius: 0.75rem;
+    --accent: 0 0% 95%;               /* #F2F2F2 */
+    --accent-foreground: 0 0% 9%;
 
+    /* ─── Chrome ─────────────────────────────────────────────── */
+    /* Thin 1px borders — no noise, no decoration */
+    --border: 0 0% 90%;               /* #E5E5E5 */
+    --input: 0 0% 90%;
+    --ring: 221 83% 53%;              /* Matches primary — focused and on-brand */
+
+    /* ─── Geometry ───────────────────────────────────────────── */
+    --radius: 0.375rem;               /* 6px — sharp enough to feel modern */
+
+    /* ─── Sidebar ─────────────────────────────────────────────── */
     --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 0 0% 7%;
     --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 0 0% 94%;
+    --sidebar-accent-foreground: 0 0% 9%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 221 83% 53%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    /* ─── Surfaces ─────────────────────────────────────────── */
+    --background: 0 0% 0%;            /* #000000 — true black */
+    --foreground: 0 0% 93%;           /* #EDEDED — soft white, comfortable on black */
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 4%;                  /* #0A0A0A — subtly elevated surface */
+    --card-foreground: 0 0% 93%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 5%;               /* #0D0D0D */
+    --popover-foreground: 0 0% 93%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    /* ─── Primary ───────────────────────────────────────────── */
+    --primary: 221 83% 63%;           /* Slightly lighter on dark for contrast */
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 221 83% 10%;
+    --primary-dark: 221 83% 48%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    /* ─── Secondary ─────────────────────────────────────────── */
+    --secondary: 0 0% 9%;             /* #171717 */
+    --secondary-foreground: 0 0% 93%;
+    --secondary-light: 0 0% 11%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    /* ─── Semantic states ───────────────────────────────────── */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 142 76% 8%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 7%;
+    --warning-light: 38 92% 8%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --error: 0 72% 51%;
+    --error-foreground: 0 0% 100%;
+    --error-light: 0 72% 8%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --destructive: 0 72% 40%;
+    --destructive-foreground: 0 0% 93%;
+
+    /* ─── Muted / Neutral ───────────────────────────────────── */
+    --muted: 0 0% 9%;                 /* #171717 */
+    --muted-foreground: 0 0% 55%;     /* #8C8C8C — readable and subdued on black */
+
+    --accent: 0 0% 10%;               /* #1A1A1A */
+    --accent-foreground: 0 0% 93%;
+
+    /* ─── Chrome ─────────────────────────────────────────────── */
+    /* Thin 1px borders — barely visible, enough to define edges */
+    --border: 0 0% 13%;               /* #212121 */
+    --input: 0 0% 13%;
+    --ring: 221 83% 63%;
+
+    /* ─── Sidebar ─────────────────────────────────────────────── */
+    --sidebar-background: 0 0% 2%;    /* #050505 */
+    --sidebar-foreground: 0 0% 75%;
+    --sidebar-primary: 221 83% 63%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 0 0% 8%;
+    --sidebar-accent-foreground: 0 0% 93%;
+    --sidebar-border: 0 0% 10%;
+    --sidebar-ring: 221 83% 63%;
   }
 }
 
+/* ─── Base Resets & Typography ──────────────────────────────── */
 @layer base {
-  * {
+  *, *::before, *::after {
     @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-feature-settings: "cv11", "ss01";   /* Inter optical features */
+    font-variation-settings: "opsz" auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    letter-spacing: -0.01em;
+  }
+
+  /* High-density heading scale — tighter, more precise */
+  h1 { @apply text-2xl font-semibold tracking-tight text-foreground; }
+  h2 { @apply text-xl font-semibold tracking-tight text-foreground; }
+  h3 { @apply text-base font-semibold tracking-tight text-foreground; }
+  h4 { @apply text-sm font-medium text-foreground; }
+  h5, h6 { @apply text-sm font-medium text-muted-foreground; }
+
+  p { @apply text-sm leading-relaxed text-muted-foreground; }
+
+  /* Inline code — monospace pill style */
+  code {
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground;
+    font-feature-settings: "liga" 0;
+  }
+
+  /* Links */
+  a {
+    @apply text-primary underline-offset-4 transition-colors duration-150;
+  }
+
+  a:hover {
+    @apply text-primary/80;
+  }
+
+  /* Focus ring — thin and precise */
+  :focus-visible {
+    outline: none;
+    @apply ring-1 ring-ring ring-offset-1 ring-offset-background;
+  }
+
+  /* Scrollbar — minimal, matches dark mode */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+
+  /* Selection color */
+  ::selection {
+    @apply bg-primary/15 text-foreground;
+  }
+}
+
+/* ─── Component Overrides ───────────────────────────────────── */
+@layer components {
+  /* Surface card — razor thin border, no shadow */
+  .surface {
+    @apply rounded-md border border-border bg-card text-card-foreground;
+  }
+
+  /* Divider — ultra-subtle */
+  .divider {
+    @apply h-px w-full bg-border;
+  }
+
+  /* Keyboard shortcut badge */
+  .kbd {
+    @apply inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground;
+  }
+
+  /* Status dot */
+  .dot-success { @apply h-1.5 w-1.5 rounded-full bg-success; }
+  .dot-warning  { @apply h-1.5 w-1.5 rounded-full bg-warning; }
+  .dot-error    { @apply h-1.5 w-1.5 rounded-full bg-error; }
+  .dot-muted    { @apply h-1.5 w-1.5 rounded-full bg-muted-foreground; }
+
+  /* Ghost row — for tables/lists interactive rows */
+  .row-hover {
+    @apply transition-colors duration-100 hover:bg-muted/60 cursor-default;
+  }
+}
+
+/* ─── Utility Overrides ─────────────────────────────────────── */
+@layer utilities {
+  /* Remove Shadcn's shadow from common components */
+  .shadow-none { box-shadow: none !important; }
+
+  /* Text balance for headings */
+  .text-balance { text-wrap: balance; }
+
+  /* Animate: micro-interaction fade up */
+  .animate-in-up {
+    animation: fade-in-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Letter spacing presets */
+  .tracking-display { letter-spacing: -0.03em; }
+  .tracking-tight   { letter-spacing: -0.015em; }
+}
+
+/* ─── Keyframes ─────────────────────────────────────────────── */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

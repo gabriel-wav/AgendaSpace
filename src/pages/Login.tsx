@@ -5,19 +5,20 @@ import { LoginForm } from '@/components/auth/LoginForm';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Login() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user && profile) {
+    if (user) {
       navigate('/dashboard');
     }
-  }, [user, profile, navigate]);
+  }, [user, navigate]);
 
   return (
     <AuthLayout
-      title="Entrar"
-      description="Acesse sua conta do AgendaSpace"
+      imageSide="right"
+      quote="Reserve o espaço certo no momento certo. Simples assim."
+      quoteAuthor="AgendaSpace — Gestão inteligente de espaços"
     >
       <LoginForm />
     </AuthLayout>

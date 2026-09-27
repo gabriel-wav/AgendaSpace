@@ -1,205 +1,164 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { api, saveToken, clearToken, getToken, decodeToken, isTokenValid } from '@/lib/api';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Shape of the JWT payload produced by NestJS JwtStrategy */
+interface JwtPayload {
+  sub: string;    // User UUID
+  email: string;
+  exp: number;
+  iat: number;
+}
+
+/** Enriched user object (decoded from token + profile endpoint) */
+export interface AuthUser {
+  id: string;
+  email: string;
+  fullName: string;
+  avatarUrl: string | null;
+  role: 'ADMIN' | 'TENANT' | 'USER';
+}
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  profile: any;
+  /** The full authenticated user (null when logged out) */
+  user: AuthUser | null;
+  /** True while checking token validity on mount */
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role?: string) => Promise<{ error: any }>;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signOut: () => Promise<void>;
+  /** True when the user holds ADMIN role */
   isAdmin: boolean;
+  /** True when the user holds TENANT role */
+  isTenant: boolean;
+  /** Authenticate against POST /auth/login */
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  /** Create an account via POST /auth/register */
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    role?: string
+  ) => Promise<{ error: string | null }>;
+  /** Clear token and user state */
+  signOut: () => void;
 }
+
+// ─── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const isAdmin = profile?.role === 'admin';
-
-  useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Defer profile fetching to avoid deadlocks
-          setTimeout(() => {
-            fetchProfile(session.user.id);
-          }, 0);
-        } else {
-          setProfile(null);
-        }
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      }
+  /**
+   * Fetch the current user's profile from the API using the stored token.
+   * Called once on mount if a valid token exists.
+   */
+  const hydrateUser = useCallback(async () => {
+    if (!isTokenValid()) {
+      clearToken();
+      setUser(null);
       setLoading(false);
-    });
+      return;
+    }
 
-    return () => subscription.unsubscribe();
+    try {
+      // GET /auth/me — returns the authenticated user's profile from MySQL via Prisma
+      const { data } = await api.get<AuthUser>('/auth/me');
+      setUser(data);
+    } catch {
+      // Token was rejected by the server (revoked, schema change, etc.)
+      clearToken();
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+  // On mount: restore session from localStorage if valid
+  useEffect(() => {
+    hydrateUser();
+  }, [hydrateUser]);
 
-      if (error) {
-        console.error('Error fetching profile:', error);
-        return;
-      }
-
-      setProfile(data);
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    }
-  };
-
-  const signUp = async (email: string, password: string, fullName: string, role: string = 'user') => {
-    try {
-      const redirectUrl = `${window.location.origin}/`;
-      
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            full_name: fullName,
-            role: role
-          }
-        }
-      });
-
-      if (error) {
-        toast({
-          title: "Erro no cadastro",
-          description: error.message,
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "Cadastro realizado!",
-          description: "Verifique seu email para confirmar a conta.",
-        });
-      }
-
-      return { error };
-    } catch (error: any) {
-      toast({
-        title: "Erro no cadastro",
-        description: error.message,
-        variant: "destructive"
-      });
-      return { error };
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      // Clean up any existing state
+  // ─── signIn ────────────────────────────────────────────────────────────────
+  const signIn = useCallback(
+    async (email: string, password: string): Promise<{ error: string | null }> => {
       try {
-        await supabase.auth.signOut({ scope: 'global' });
-      } catch (err) {
-        // Continue even if this fails
+        const { data } = await api.post<{ access_token: string; user: AuthUser }>(
+          '/auth/login',
+          { email, password }
+        );
+
+        saveToken(data.access_token);
+        setUser(data.user);
+        return { error: null };
+      } catch (err: any) {
+        const message =
+          err.response?.data?.message ??
+          err.response?.data?.error ??
+          'Falha ao autenticar. Verifique suas credenciais.';
+        return { error: message };
       }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        toast({
-          title: "Erro no login",
-          description: error.message,
-          variant: "destructive"
-        });
-      } else if (data.user) {
-        toast({
-          title: "Login realizado!",
-          description: "Bem-vindo ao AgendaSpace",
-        });
-        // Force page reload for clean state
-        window.location.href = '/dashboard';
-      }
-
-      return { error };
-    } catch (error: any) {
-      toast({
-        title: "Erro no login",
-        description: error.message,
-        variant: "destructive"
-      });
-      return { error };
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      // Clean up auth state
-      setProfile(null);
-      
-      await supabase.auth.signOut({ scope: 'global' });
-      
-      toast({
-        title: "Logout realizado",
-        description: "Até logo!",
-      });
-      
-      // Force page reload for clean state
-      window.location.href = '/';
-    } catch (error: any) {
-      console.error('Error signing out:', error);
-      toast({
-        title: "Erro no logout",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const value = {
-    user,
-    session,
-    profile,
-    loading,
-    signUp,
-    signIn,
-    signOut,
-    isAdmin
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
+    },
+    []
   );
+
+  // ─── signUp ────────────────────────────────────────────────────────────────
+  const signUp = useCallback(
+    async (
+      email: string,
+      password: string,
+      fullName: string,
+      role = 'USER'
+    ): Promise<{ error: string | null }> => {
+      try {
+        const { data } = await api.post<{ access_token: string; user: AuthUser }>(
+          '/auth/register',
+          { email, password, fullName, role: role.toUpperCase() }
+        );
+
+        saveToken(data.access_token);
+        setUser(data.user);
+        return { error: null };
+      } catch (err: any) {
+        const message =
+          err.response?.data?.message ??
+          err.response?.data?.error ??
+          'Falha ao criar conta.';
+        return { error: Array.isArray(message) ? message[0] : message };
+      }
+    },
+    []
+  );
+
+  // ─── signOut ───────────────────────────────────────────────────────────────
+  const signOut = useCallback(() => {
+    clearToken();
+    setUser(null);
+    window.location.replace('/login');
+  }, []);
+
+  const value: AuthContextType = {
+    user,
+    loading,
+    isAdmin: user?.role === 'ADMIN',
+    isTenant: user?.role === 'TENANT',
+    signIn,
+    signUp,
+    signOut,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => {
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth must be used within an <AuthProvider>');
   }
   return context;
-};
+}

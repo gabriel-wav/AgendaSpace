@@ -1,54 +1,51 @@
+/**
+ * useFileUpload.ts
+ *
+ * Hook para upload de arquivos via NestJS API (multipart/form-data).
+ * Substitui o hook legado que dependia do Supabase Storage.
+ *
+ * O backend deve expor:
+ *   POST /upload/:bucket  → { url: string }
+ */
+
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
-interface UseFileUploadProps {
-  bucket: string;
-  path?: string;
+interface UseFileUploadOptions {
+  /** Bucket lógico — mapeado no backend para a pasta de destino */
+  bucket: 'spaces' | 'avatars' | 'feed';
 }
 
-export function useFileUpload({ bucket, path = '' }: UseFileUploadProps) {
+interface UseFileUploadReturn {
+  uploadFile: (file: File) => Promise<string | null>;
+  uploading: boolean;
+}
+
+export function useFileUpload({ bucket }: UseFileUploadOptions): UseFileUploadReturn {
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
 
-  const uploadFile = async (file: File, userId?: string): Promise<string | null> => {
+  const uploadFile = async (file: File): Promise<string | null> => {
+    setUploading(true);
+
     try {
-      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
 
-      // Gerar nome único para o arquivo
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      
-      // Construir caminho do arquivo
-      const filePath = userId ? `${userId}/${fileName}` : `${path}/${fileName}`;
+      // Axios injeta o Bearer token via interceptor em api.ts
+      const { data } = await api.post<{ url: string }>(
+        `/upload/${bucket}`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
 
-      // Upload do arquivo
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (error) throw error;
-
-      // Obter URL pública
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(data.path);
-
+      return data.url;
+    } catch (err: any) {
       toast({
-        title: "Upload realizado",
-        description: "Arquivo enviado com sucesso!"
-      });
-
-      return urlData.publicUrl;
-    } catch (error: any) {
-      console.error('Erro no upload:', error);
-      toast({
-        title: "Erro no upload",
-        description: error.message,
-        variant: "destructive"
+        title: 'Erro no upload',
+        description: err.response?.data?.message ?? err.message,
+        variant: 'destructive',
       });
       return null;
     } finally {
@@ -56,34 +53,5 @@ export function useFileUpload({ bucket, path = '' }: UseFileUploadProps) {
     }
   };
 
-  const deleteFile = async (filePath: string): Promise<boolean> => {
-    try {
-      const { error } = await supabase.storage
-        .from(bucket)
-        .remove([filePath]);
-
-      if (error) throw error;
-
-      toast({
-        title: "Arquivo removido",
-        description: "Arquivo removido com sucesso!"
-      });
-
-      return true;
-    } catch (error: any) {
-      console.error('Erro ao remover arquivo:', error);
-      toast({
-        title: "Erro ao remover",
-        description: error.message,
-        variant: "destructive"
-      });
-      return false;
-    }
-  };
-
-  return {
-    uploadFile,
-    deleteFile,
-    uploading
-  };
+  return { uploadFile, uploading };
 }
