@@ -37,24 +37,18 @@ import {
   Loader2,
   Users,
   Banknote,
+  Link as LinkIcon,
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import {
+  Space,
+  CreateSpacePayload,
+  fetchSpaces as apiFetchSpaces,
+  createSpace,
+  updateSpace,
+  deleteSpace,
+} from '@/lib/spaces.api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-
-// ─── Types ─────────────────────────────────────────────────────────────────
-
-interface Space {
-  id: string;
-  name: string;
-  description: string;
-  capacity: number;
-  price_per_hour: number;
-  resources: string[];
-  image_url?: string;
-  is_active: boolean;
-  created_at: string;
-}
 
 // ─── Primitives ─────────────────────────────────────────────────────────────
 
@@ -117,6 +111,41 @@ interface SpaceSheetProps {
   onSaved: () => void;
 }
 
+/** Redimensiona e comprime imagem no navegador para manter o payload leve e rápido (< 80KB) */
+function compressImage(file: File, maxWidth = 1000, quality = 0.75): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
@@ -141,14 +170,22 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
         name: editing.name,
         description: editing.description ?? '',
         capacity: String(editing.capacity),
-        price_per_hour: String(editing.price_per_hour),
-        resources: editing.resources.join(', '),
-        image_url: editing.image_url ?? '',
-        is_active: editing.is_active,
+        price_per_hour: String(editing.pricePerHour),
+        resources: Array.isArray(editing.resources) ? editing.resources.join(', ') : '',
+        image_url: editing.imageUrl ?? '',
+        is_active: editing.isActive,
       });
-      setImagePreview(editing.image_url ?? null);
+      setImagePreview(editing.imageUrl ?? null);
     } else {
-      setForm({ name: '', description: '', capacity: '', price_per_hour: '', resources: '', image_url: '', is_active: true });
+      setForm({
+        name: '',
+        description: '',
+        capacity: '',
+        price_per_hour: '',
+        resources: '',
+        image_url: '',
+        is_active: true,
+      });
       setImagePreview(null);
     }
     setImageFile(null);
@@ -169,38 +206,43 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
     setSaving(true);
 
     try {
-      let imageUrl = form.image_url;
+      let finalImageUrl = form.image_url.trim() || undefined;
 
-      // TODO: Replace with your upload logic
+      // Se o usuário selecionou um arquivo local, comprime e converte
       if (imageFile) {
-        // imageUrl = await uploadToStorage(imageFile);
-        imageUrl = URL.createObjectURL(imageFile); // placeholder
+        finalImageUrl = await compressImage(imageFile);
       }
 
-      const payload = {
-        name: form.name,
-        description: form.description,
-        capacity: parseInt(form.capacity),
-        price_per_hour: parseFloat(form.price_per_hour),
-        resources: form.resources.split(',').map((r) => r.trim()).filter(Boolean),
-        image_url: imageUrl || null,
-        is_active: form.is_active,
+      const payload: CreateSpacePayload = {
+        name: form.name.trim(),
+        description: form.description?.trim() || undefined,
+        capacity: parseInt(form.capacity, 10) || 1,
+        pricePerHour: parseFloat(form.price_per_hour) || 0,
+        resources: form.resources
+          .split(',')
+          .map((r) => r.trim())
+          .filter(Boolean),
+        imageUrl: finalImageUrl,
+        isActive: form.is_active,
       };
 
       if (editing) {
-        const { error } = await supabase.from('spaces').update(payload).eq('id', editing.id);
-        if (error) throw error;
+        await updateSpace(editing.id, payload);
         toast({ title: 'Espaço atualizado com sucesso.' });
       } else {
-        const { error } = await supabase.from('spaces').insert([payload]);
-        if (error) throw error;
+        await createSpace(payload);
         toast({ title: 'Espaço criado com sucesso.' });
       }
 
       onSaved();
       onOpenChange(false);
     } catch (err: any) {
-      toast({ title: 'Erro ao salvar', description: err.message, variant: 'destructive' });
+      const message = err.response?.data?.message
+        ? Array.isArray(err.response.data.message)
+          ? err.response.data.message.join(', ')
+          : err.response.data.message
+        : err.message || 'Erro ao salvar espaço';
+      toast({ title: 'Erro ao salvar', description: message, variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -225,11 +267,11 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5 px-6 py-6">
-          {/* Image upload */}
+          {/* Image upload / URL */}
           <div>
-            <FieldLabel htmlFor="image">Imagem</FieldLabel>
+            <FieldLabel htmlFor="image">Imagem do Espaço</FieldLabel>
             {imagePreview ? (
-              <div className="relative overflow-hidden rounded-md border border-border/60 bg-muted">
+              <div className="relative overflow-hidden rounded-md border border-border/60 bg-muted mb-2">
                 <img
                   src={imagePreview}
                   alt="Preview"
@@ -237,7 +279,11 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
                 />
                 <button
                   type="button"
-                  onClick={() => { setImageFile(null); setImagePreview(null); setForm((f) => ({ ...f, image_url: '' })); }}
+                  onClick={() => {
+                    setImageFile(null);
+                    setImagePreview(null);
+                    setForm((f) => ({ ...f, image_url: '' }));
+                  }}
                   className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -247,13 +293,34 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed border-border/60 py-6 text-muted-foreground/50 hover:border-border hover:text-muted-foreground transition-all duration-150"
+                className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed border-border/60 py-5 text-muted-foreground/60 hover:border-border hover:text-muted-foreground transition-all duration-150 mb-2"
               >
                 <ImagePlus className="h-5 w-5" strokeWidth={1.5} />
-                <span className="text-xs">Clique para adicionar uma imagem</span>
+                <span className="text-xs">Clique para selecionar imagem local</span>
               </button>
             )}
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageChange}
+            />
+
+            <div className="relative">
+              <LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+              <input
+                className={cn(inputCls, 'pl-8 text-xs')}
+                placeholder="Ou cole uma URL de imagem (https://...)"
+                value={form.image_url}
+                onChange={(e) => {
+                  field('image_url')(e.target.value);
+                  if (e.target.value) {
+                    setImagePreview(e.target.value);
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {/* Name */}
@@ -321,7 +388,7 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
               className={inputCls}
               value={form.resources}
               onChange={(e) => field('resources')(e.target.value)}
-              placeholder="wifi, projetor, quadro-branco"
+              placeholder="Wi-Fi, Projetor, Ar-condicionado, Quadro branco"
             />
             <p className="mt-1.5 text-[11px] text-muted-foreground/50">
               Separe os recursos por vírgula.
@@ -391,13 +458,13 @@ function SpaceRow({ space, onEdit, onDelete, onToggleActive }: SpaceRowProps) {
   return (
     <div className="group flex items-center gap-4 border-b border-zinc-200/50 dark:border-zinc-800/50 px-4 py-4 transition-colors duration-100 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/30">
       {/* Thumbnail */}
-      <SpaceThumbnail imageUrl={space.image_url} name={space.name} />
+      <SpaceThumbnail imageUrl={space.imageUrl ?? undefined} name={space.name} />
 
       {/* Main info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground truncate">{space.name}</span>
-          <StatusDot active={space.is_active} />
+          <StatusDot active={space.isActive} />
         </div>
         {space.description && (
           <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-sm">
@@ -432,7 +499,7 @@ function SpaceRow({ space, onEdit, onDelete, onToggleActive }: SpaceRowProps) {
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Banknote className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span>
-            {Number(space.price_per_hour).toLocaleString('pt-BR', {
+            {Number(space.pricePerHour).toLocaleString('pt-BR', {
               style: 'currency',
               currency: 'BRL',
             })}
@@ -466,10 +533,10 @@ function SpaceRow({ space, onEdit, onDelete, onToggleActive }: SpaceRowProps) {
             <span
               className={cn(
                 'h-3.5 w-3.5 rounded-full border',
-                space.is_active ? 'border-muted-foreground/40' : 'bg-success border-success'
+                space.isActive ? 'border-muted-foreground/40' : 'bg-success border-success'
               )}
             />
-            {space.is_active ? 'Desativar' : 'Ativar'}
+            {space.isActive ? 'Desativar' : 'Ativar'}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -532,23 +599,22 @@ export default function AdminSpaces() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => { fetchSpaces(); }, []);
-
-  const fetchSpaces = async () => {
+  const loadSpaces = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('spaces')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
+      const data = await apiFetchSpaces(false);
       setSpaces(data ?? []);
     } catch (err: any) {
-      toast({ title: 'Erro ao carregar espaços', description: err.message, variant: 'destructive' });
+      const message = err.response?.data?.message || err.message || 'Erro ao carregar espaços';
+      toast({ title: 'Erro ao carregar espaços', description: message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadSpaces();
+  }, []);
 
   const openCreate = () => {
     setEditing(null);
@@ -562,28 +628,28 @@ export default function AdminSpaces() {
 
   const handleToggleActive = async (space: Space) => {
     try {
-      const { error } = await supabase
-        .from('spaces')
-        .update({ is_active: !space.is_active })
-        .eq('id', space.id);
-      if (error) throw error;
+      const updated = await updateSpace(space.id, { isActive: !space.isActive });
       setSpaces((prev) =>
-        prev.map((s) => s.id === space.id ? { ...s, is_active: !s.is_active } : s)
+        prev.map((s) => (s.id === space.id ? { ...s, isActive: updated.isActive } : s))
       );
+      toast({
+        title: updated.isActive ? 'Espaço ativado.' : 'Espaço desativado.',
+      });
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' });
+      const message = err.response?.data?.message || err.message;
+      toast({ title: 'Erro ao alterar status', description: message, variant: 'destructive' });
     }
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const { error } = await supabase.from('spaces').delete().eq('id', deleteTarget);
-      if (error) throw error;
+      await deleteSpace(deleteTarget);
       setSpaces((prev) => prev.filter((s) => s.id !== deleteTarget));
       toast({ title: 'Espaço excluído com sucesso.' });
     } catch (err: any) {
-      toast({ title: 'Erro ao excluir', description: err.message, variant: 'destructive' });
+      const message = err.response?.data?.message || err.message;
+      toast({ title: 'Erro ao excluir', description: message, variant: 'destructive' });
     } finally {
       setDeleteTarget(null);
     }
@@ -595,7 +661,7 @@ export default function AdminSpaces() {
       s.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const activeCount = spaces.filter((s) => s.is_active).length;
+  const activeCount = spaces.filter((s) => s.isActive).length;
 
   return (
     <AppLayout>
@@ -621,7 +687,7 @@ export default function AdminSpaces() {
           </button>
         </div>
 
-        {/* Search bar — inline, no card wrapper */}
+        {/* Search bar */}
         <div className="relative max-w-sm">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50"
@@ -696,7 +762,7 @@ export default function AdminSpaces() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         editing={editing}
-        onSaved={fetchSpaces}
+        onSaved={loadSpaces}
       />
 
       {/* Delete confirmation dialog */}
@@ -705,7 +771,7 @@ export default function AdminSpaces() {
           <AlertDialogHeader>
             <AlertDialogTitle className="text-base">Excluir espaço?</AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground">
-              Esta ação é irreversível. Todas as reservas vinculadas a este espaço também serão removidas.
+              Esta ação desativará o espaço. O histórico de reservas existentes permanecerá preservado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

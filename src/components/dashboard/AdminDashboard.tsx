@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Building2, Calendar, DollarSign, Users, Plus, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { fetchSpaces } from '@/lib/spaces.api';
+import { fetchBookings } from '@/lib/bookings.api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -24,63 +25,52 @@ export function AdminDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch total spaces
-        const { data: spacesData, count: spacesCount } = await supabase
-          .from('spaces')
-          .select('*', { count: 'exact' })
-          .eq('is_active', true);
+        const [spacesData, bookingsData] = await Promise.all([
+          fetchSpaces(false).catch(() => []),
+          fetchBookings().catch(() => []),
+        ]);
 
-        // Fetch today's bookings
-        const today = new Date();
-        const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString();
-        const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString();
-        
-        const { data: todayBookingsData, count: todayBookingsCount } = await supabase
-          .from('bookings')
-          .select('*', { count: 'exact' })
-          .gte('start_datetime', startOfDay)
-          .lte('start_datetime', endOfDay);
+        const todayStr = new Date().toDateString();
+        const todayBookingsCount = bookingsData.filter((b) => {
+          const dt = new Date(b.startDatetime || (b as any).start_datetime);
+          return dt.toDateString() === todayStr;
+        }).length;
 
-        // Fetch this month's revenue
-        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
-        const { data: monthlyBookings } = await supabase
-          .from('bookings')
-          .select('total_price')
-          .gte('created_at', startOfMonth)
-          .eq('status', 'confirmed');
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+        const monthlyRevenue = bookingsData.reduce((sum, b) => {
+          const dt = new Date(b.startDatetime || (b as any).start_datetime);
+          const isThisMonth = dt.getMonth() === currentMonth && dt.getFullYear() === currentYear;
+          const isConfirmed = String(b.status).toUpperCase() === 'CONFIRMED';
+          if (isThisMonth && isConfirmed) {
+            return sum + (parseFloat(String(b.totalPrice || (b as any).total_price)) || 0);
+          }
+          return sum;
+        }, 0);
 
-        const monthlyRevenue = monthlyBookings?.reduce((sum, booking) => 
-          sum + (parseFloat(booking.total_price.toString()) || 0), 0) || 0;
-
-        // Fetch unique users count
-        const { data: profiles, count: profilesCount } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact' });
-
-        // Fetch recent bookings with details
-        const { data: recentBookingsData } = await supabase
-          .from('bookings')
-          .select(`
-            *,
-            spaces (name),
-            profiles (full_name)
-          `)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        setStats({
-          totalSpaces: spacesCount || 0,
-          todayBookings: todayBookingsCount || 0,
-          monthlyRevenue: Math.round(monthlyRevenue),
-          activeUsers: profilesCount || 0,
+        // Sort bookings by creation date descending
+        const sorted = [...bookingsData].sort((a, b) => {
+          const tA = new Date(a.createdAt || (a as any).created_at).getTime();
+          const tB = new Date(b.createdAt || (b as any).created_at).getTime();
+          return tB - tA;
         });
 
-        setRecentBookings(recentBookingsData || []);
+        // Set unique users
+        const uniqueUserIds = new Set(bookingsData.map((b) => b.userId || (b as any).user_id));
+        if (spacesData.length > 0) uniqueUserIds.add('owner');
 
+        setStats({
+          totalSpaces: spacesData.filter((s) => s.isActive).length,
+          todayBookings: todayBookingsCount,
+          monthlyRevenue: Math.round(monthlyRevenue),
+          activeUsers: Math.max(uniqueUserIds.size, 1),
+        });
+
+        setRecentBookings(sorted.slice(0, 5));
       } catch (error: any) {
         toast({
           title: "Erro ao carregar dados",
-          description: error.message,
+          description: error.response?.data?.message || error.message,
           variant: "destructive"
         });
       } finally {
@@ -207,20 +197,20 @@ export function AdminDashboard() {
                   {recentBookings.map((booking) => (
                     <div key={booking.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex-1">
-                        <p className="font-medium">{booking.spaces?.name}</p>
-                        <p className="text-sm text-muted-foreground">{booking.profiles?.full_name}</p>
+                        <p className="font-medium">{booking.space?.name || booking.spaces?.name || 'Espaço'}</p>
+                        <p className="text-sm text-muted-foreground">{booking.user?.fullName || booking.profiles?.full_name || 'Usuário'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium">
-                          {format(new Date(booking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(booking.end_datetime), "HH:mm", { locale: ptBR })}
+                          {format(new Date(booking.startDatetime || booking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(booking.endDatetime || booking.end_datetime), "HH:mm", { locale: ptBR })}
                         </p>
                         <Badge 
-                          variant={booking.status === 'confirmed' ? 'default' : booking.status === 'pending' ? 'secondary' : 'outline'}
+                          variant={String(booking.status).toUpperCase() === 'CONFIRMED' ? 'default' : String(booking.status).toUpperCase() === 'PENDING' ? 'secondary' : 'outline'}
                           className="text-xs"
                         >
-                          {booking.status === 'confirmed' ? 'Confirmado' : 
-                           booking.status === 'pending' ? 'Pendente' : 
-                           booking.status === 'completed' ? 'Realizado' : 'Cancelado'}
+                          {String(booking.status).toUpperCase() === 'CONFIRMED' ? 'Confirmado' : 
+                           String(booking.status).toUpperCase() === 'PENDING' ? 'Pendente' : 
+                           String(booking.status).toUpperCase() === 'COMPLETED' ? 'Realizado' : 'Cancelado'}
                         </Badge>
                       </div>
                     </div>

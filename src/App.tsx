@@ -74,14 +74,14 @@ const App = () => (
               </ProtectedRoute>
             } />
 
-            {/* Protected — ADMIN only */}
+            {/* Protected — ADMIN or TENANT */}
             <Route path="/admin/spaces" element={
-              <ProtectedRoute requireAdmin>
+              <ProtectedRoute requireTenant>
                 <AdminSpaces />
               </ProtectedRoute>
             } />
             <Route path="/admin/bookings" element={
-              <ProtectedRoute requireAdmin>
+              <ProtectedRoute requireTenant>
                 <AdminBookings />
               </ProtectedRoute>
             } />

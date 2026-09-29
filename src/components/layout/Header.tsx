@@ -81,26 +81,36 @@ function NavPill({ items }: { items: NavItem[] }) {
 }
 
 function ProfileMenu() {
-  const { profile, signOut } = useAuth();
+  const { profile, user, signOut } = useAuth();
   const navigate = useNavigate();
 
+  const displayName = user?.fullName || profile?.full_name || 'Usuário';
+  const displayEmail = user?.email || profile?.email || '';
+  const avatarUrl = user?.avatarUrl || profile?.avatar_url;
+
   const initials = (name: string) =>
-    name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
+    name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors duration-150 outline-none focus-visible:ring-1 focus-visible:ring-ring">
           <Avatar className="h-6 w-6 shrink-0">
-            {profile?.avatar_url && (
-              <AvatarImage src={profile.avatar_url} alt={profile.full_name || ''} />
+            {avatarUrl && (
+              <AvatarImage src={avatarUrl} alt={displayName} />
             )}
             <AvatarFallback className="bg-muted text-[10px] font-medium text-foreground">
-              {profile?.full_name ? initials(profile.full_name) : 'U'}
+              {displayName ? initials(displayName) : 'U'}
             </AvatarFallback>
           </Avatar>
           <span className="hidden sm:block max-w-[120px] truncate text-sm font-medium text-foreground">
-            {profile?.full_name || 'Usuário'}
+            {displayName}
           </span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </button>
@@ -114,10 +124,10 @@ function ProfileMenu() {
       >
         <DropdownMenuLabel className="font-normal px-3 py-2">
           <p className="text-sm font-medium leading-none text-foreground">
-            {profile?.full_name || 'Usuário'}
+            {displayName}
           </p>
           <p className="mt-1 text-xs leading-none text-muted-foreground truncate">
-            {profile?.email}
+            {displayEmail}
           </p>
         </DropdownMenuLabel>
 
@@ -200,7 +210,7 @@ function MobileNav({ items }: { items: NavItem[] }) {
 }
 
 export function Header() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isTenant } = useAuth();
 
   const adminNav: NavItem[] = [
     { label: 'Dashboard',  href: '/dashboard',       icon: LayoutDashboard },
@@ -210,14 +220,21 @@ export function Header() {
     { label: 'Usuários',   href: '/admin/users',      icon: Users },
   ];
 
-  const userNav: NavItem[] = [
-    { label: 'Dashboard',  href: '/dashboard',  icon: LayoutDashboard },
-    { label: 'Espaços',    href: '/spaces',     icon: Building2 },
-    { label: 'Reservas',   href: '/my-bookings', icon: Calendar },
-    { label: 'Feed',       href: '/feed',       icon: ImagePlay },
+  const tenantNav: NavItem[] = [
+    { label: 'Dashboard',   href: '/dashboard',       icon: LayoutDashboard },
+    { label: 'Meus Espaços', href: '/admin/spaces',    icon: Building2 },
+    { label: 'Reservas',    href: '/admin/bookings',  icon: Calendar },
+    { label: 'Feed',        href: '/feed',            icon: ImagePlay },
   ];
 
-  const navItems = isAdmin ? adminNav : userNav;
+  const userNav: NavItem[] = [
+    { label: 'Dashboard',  href: '/dashboard',   icon: LayoutDashboard },
+    { label: 'Espaços',    href: '/spaces',      icon: Building2 },
+    { label: 'Reservas',   href: '/my-bookings', icon: Calendar },
+    { label: 'Feed',       href: '/feed',        icon: ImagePlay },
+  ];
+
+  const navItems = isAdmin ? adminNav : isTenant ? tenantNav : userNav;
 
   return (
     <header className="sticky top-0 z-40 h-12 w-full border-b border-border/60 bg-background/70 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
@@ -225,13 +242,18 @@ export function Header() {
         {/* Left — Logo */}
         <div className="flex items-center gap-6">
           <Logo />
-          {/* Admin badge */}
-          {isAdmin && (
+          {/* Role badge */}
+          {isAdmin ? (
             <span className="hidden sm:inline-flex items-center gap-1 rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
               <Shield className="h-2.5 w-2.5" />
               Admin
             </span>
-          )}
+          ) : isTenant ? (
+            <span className="hidden sm:inline-flex items-center gap-1 rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <Building2 className="h-2.5 w-2.5" />
+              Locatário
+            </span>
+          ) : null}
         </div>
 
         {/* Center — Navigation links (desktop) */}

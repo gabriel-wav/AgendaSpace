@@ -8,7 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { BookingForm } from '@/components/booking/BookingForm';
-import { supabase } from '@/integrations/supabase/client';
+import { fetchSpaces } from '@/lib/spaces.api';
+import { fetchBookings } from '@/lib/bookings.api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -30,61 +31,37 @@ export function UserDashboard() {
   // Fetch real data from database
   useEffect(() => {
     const fetchData = async () => {
-      if (!user?.id) return;
-      
       try {
-        // Fetch spaces
-        const { data: spacesData, error: spacesError } = await supabase
-          .from('spaces')
-          .select('*')
-          .eq('is_active', true)
-          .limit(3);
-        
-        if (spacesError) throw spacesError;
-        setSpaces(spacesData || []);
+        const [spacesData, bookingsData] = await Promise.all([
+          fetchSpaces(true).catch(() => []),
+          fetchBookings().catch(() => []),
+        ]);
 
-        // Fetch user bookings
-        const { data: bookingsData, error: bookingsError } = await supabase
-          .from('bookings')
-          .select(`
-            *,
-            spaces (
-              name,
-              capacity,
-              resources
-            )
-          `)
-          .eq('user_id', user.id)
-          .gte('start_datetime', new Date().toISOString())
-          .order('start_datetime', { ascending: true })
-          .limit(5);
+        setSpaces(spacesData.slice(0, 3));
 
-        if (bookingsError) throw bookingsError;
-        setBookings(bookingsData || []);
-
-        // Calculate stats
-        const totalSpacesResult = await supabase
-          .from('spaces')
-          .select('*', { count: 'exact' })
-          .eq('is_active', true);
-        
-        const totalHours = bookingsData?.reduce((acc, booking) => {
-          const start = new Date(booking.start_datetime);
-          const end = new Date(booking.end_datetime);
-          const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-          return acc + hours;
-        }, 0) || 0;
-
-        setStats({
-          upcomingBookings: bookingsData?.length || 0,
-          totalHours: Math.round(totalHours),
-          availableSpaces: totalSpacesResult.count || 0
+        const now = new Date();
+        const upcoming = bookingsData.filter((b) => {
+          const dt = new Date(b.startDatetime || (b as any).start_datetime);
+          return dt >= now;
         });
 
+        const totalHours = upcoming.reduce((acc, booking) => {
+          const start = new Date(booking.startDatetime || (booking as any).start_datetime);
+          const end = new Date(booking.endDatetime || (booking as any).end_datetime);
+          const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+          return acc + (isNaN(hours) ? 0 : Math.max(0, hours));
+        }, 0);
+
+        setBookings(upcoming.slice(0, 5));
+        setStats({
+          upcomingBookings: upcoming.length,
+          totalHours: Math.round(totalHours),
+          availableSpaces: spacesData.length,
+        });
       } catch (error: any) {
         toast({
           title: "Erro ao carregar dados",
-          description: error.message,
+          description: error.response?.data?.message || error.message,
           variant: "destructive"
         });
       } finally {
@@ -93,7 +70,7 @@ export function UserDashboard() {
     };
 
     fetchData();
-  }, [user?.id, toast]);
+  }, [toast]);
 
 
   return (
@@ -172,74 +149,80 @@ export function UserDashboard() {
               </div>
             ) : bookings.length > 0 ? (
               <div className="space-y-4">
-                {bookings.map((booking) => (
-                  <div key={booking.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex-1">
-                      <h3 className="font-medium">{booking.spaces?.name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {format(new Date(booking.start_datetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} - {format(new Date(booking.end_datetime), "HH:mm", { locale: ptBR })}
-                      </p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-xs bg-muted px-2 py-1 rounded">
-                          {booking.spaces?.capacity} pessoas
-                        </span>
-                        {booking.spaces?.resources?.slice(0, 2).map((resource: string) => (
-                          <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                            {resource}
-                          </span>
-                        ))}
-                        {booking.spaces?.resources?.length > 2 && (
+                {bookings.map((booking) => {
+                  const spaceObj = booking.space || booking.spaces;
+                  const startDt = booking.startDatetime || booking.start_datetime;
+                  const endDt = booking.endDatetime || booking.end_datetime;
+                  const resources = Array.isArray(spaceObj?.resources) ? spaceObj.resources : [];
+
+                  return (
+                    <div key={booking.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="flex-1">
+                        <h3 className="font-medium">{spaceObj?.name || 'Espaço'}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {format(new Date(startDt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} - {format(new Date(endDt), "HH:mm", { locale: ptBR })}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
                           <span className="text-xs bg-muted px-2 py-1 rounded">
-                            +{booking.spaces.resources.length - 2}
+                            {spaceObj?.capacity} pessoas
                           </span>
-                        )}
+                          {resources.slice(0, 2).map((resource: string) => (
+                            <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                              {resource}
+                            </span>
+                          ))}
+                          {resources.length > 2 && (
+                            <span className="text-xs bg-muted px-2 py-1 rounded">
+                              +{resources.length - 2}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge 
-                        variant={booking.status === 'confirmed' ? 'default' : booking.status === 'pending' ? 'secondary' : 'outline'}
-                      >
-                        {booking.status === 'confirmed' ? 'Confirmado' : 
-                         booking.status === 'pending' ? 'Pendente' : 
-                         booking.status === 'completed' ? 'Realizado' : 'Cancelado'}
-                      </Badge>
-                      <div className="mt-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => setSelectedBooking(booking)}
-                            >
-                              <Eye className="mr-1 h-3 w-3" />
-                              Detalhes
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-md">
-                            <DialogHeader>
-                              <DialogTitle>Detalhes da Reserva</DialogTitle>
-                            </DialogHeader>
-                            {selectedBooking && (
-                              <div className="space-y-4">
-                                <div>
-                                  <h3 className="font-medium text-lg">{selectedBooking.spaces?.name}</h3>
-                                  <p className="text-muted-foreground">
-                                    {format(new Date(selectedBooking.start_datetime), "dd/MM/yyyy", { locale: ptBR })}
-                                  </p>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-4">
+                      <div className="text-right">
+                        <Badge 
+                          variant={String(booking.status).toUpperCase() === 'CONFIRMED' ? 'default' : String(booking.status).toUpperCase() === 'PENDING' ? 'secondary' : 'outline'}
+                        >
+                          {String(booking.status).toUpperCase() === 'CONFIRMED' ? 'Confirmado' : 
+                           String(booking.status).toUpperCase() === 'PENDING' ? 'Pendente' : 
+                           String(booking.status).toUpperCase() === 'COMPLETED' ? 'Realizado' : 'Cancelado'}
+                        </Badge>
+                        <div className="mt-2">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => setSelectedBooking(booking)}
+                              >
+                                <Eye className="mr-1 h-3 w-3" />
+                                Detalhes
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-md">
+                              <DialogHeader>
+                                <DialogTitle>Detalhes da Reserva</DialogTitle>
+                              </DialogHeader>
+                              {selectedBooking && (
+                                <div className="space-y-4">
                                   <div>
-                                    <p className="text-sm font-medium">Horário</p>
-                                    <p className="text-sm text-muted-foreground">
-                                      {format(new Date(selectedBooking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(selectedBooking.end_datetime), "HH:mm", { locale: ptBR })}
+                                    <h3 className="font-medium text-lg">{(selectedBooking.space || selectedBooking.spaces)?.name}</h3>
+                                    <p className="text-muted-foreground">
+                                      {format(new Date(selectedBooking.startDatetime || selectedBooking.start_datetime), "dd/MM/yyyy", { locale: ptBR })}
                                     </p>
                                   </div>
-                                  <div>
-                                    <p className="text-sm font-medium">Preço Total</p>
-                                    <p className="text-sm text-muted-foreground">R$ {selectedBooking.total_price}</p>
+                                  
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <p className="text-sm font-medium">Horário</p>
+                                      <p className="text-sm text-muted-foreground">
+                                        {format(new Date(selectedBooking.startDatetime || selectedBooking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(selectedBooking.endDatetime || selectedBooking.end_datetime), "HH:mm", { locale: ptBR })}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium">Preço Total</p>
+                                      <p className="text-sm text-muted-foreground">R$ {selectedBooking.totalPrice || selectedBooking.total_price}</p>
+                                    </div>
                                   </div>
-                                </div>
 
                                 <div>
                                   <p className="text-sm font-medium mb-2">Recursos</p>
@@ -277,8 +260,9 @@ export function UserDashboard() {
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
+            </div>
             ) : (
               <div className="text-center py-8">
                 <Calendar className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
@@ -324,7 +308,7 @@ export function UserDashboard() {
                       <h3 className="font-medium mb-2">{space.name}</h3>
                       <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
                         <span>{space.capacity} pessoas</span>
-                        <span className="font-medium text-foreground">R$ {space.price_per_hour}/h</span>
+                        <span className="font-medium text-foreground">R$ {space.pricePerHour || space.price_per_hour}/h</span>
                       </div>
                       <Dialog>
                         <DialogTrigger asChild>
@@ -347,7 +331,7 @@ export function UserDashboard() {
                                 name: selectedSpace.name,
                                 description: selectedSpace.description || '',
                                 capacity: selectedSpace.capacity,
-                                price_per_hour: selectedSpace.price_per_hour,
+                                price_per_hour: parseFloat(selectedSpace.pricePerHour || selectedSpace.price_per_hour) || 0,
                                 resources: selectedSpace.resources || []
                               }}
                               onSuccess={() => setSelectedSpace(null)}
