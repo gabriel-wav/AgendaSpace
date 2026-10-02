@@ -14,22 +14,23 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // Um tipo simplificado para a prop de reserva
-interface Booking {
+export interface PaymentBooking {
   id: string;
   totalPrice: number | string;
   startDatetime: string;
   endDatetime: string;
   space?: { name: string };
   user?: { fullName: string };
+  spaces?: { name: string }; // For compatibility
 }
 
-interface PaymentDialogProps {
-  booking: Booking;
+interface PaymentFormProps {
+  booking: PaymentBooking;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function PaymentDialog({ booking, onSuccess, onCancel }: PaymentDialogProps) {
+export function PaymentForm({ booking, onSuccess, onCancel }: PaymentFormProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'CREDIT_CARD'>('PIX');
@@ -95,13 +96,13 @@ Cláusula Única: Este é um contrato fictício de uso acadêmico. Nenhum servi�
   };
 
   return (
-    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle className="text-2xl">Confirmar Reserva e Pagamento</DialogTitle>
-        <DialogDescription>
+    <div className="flex flex-col">
+      <div className="mb-4">
+        <h2 className="text-2xl font-semibold leading-none tracking-tight">Confirmar Reserva e Pagamento</h2>
+        <p className="text-sm text-muted-foreground mt-1.5">
           Ambiente de simulação acadêmica. Nenhum valor real será cobrado.
-        </DialogDescription>
-      </DialogHeader>
+        </p>
+      </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 py-2">
         {/* Área do Contrato */}
@@ -189,8 +190,8 @@ Cláusula Única: Este é um contrato fictício de uso acadêmico. Nenhum servi�
         </div>
       </div>
       
-      <DialogFooter className="mt-4 sm:justify-between items-center border-t pt-4">
-        <Button variant="ghost" onClick={onCancel}>Cancelar Simulação</Button>
+      <div className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-between items-center border-t pt-4 gap-2">
+        <Button variant="ghost" onClick={onCancel} className="w-full sm:w-auto">Cancelar Simulação</Button>
         <Button onClick={handlePaymentAndConfirmation} disabled={loading || !contractAccepted} className="w-full sm:w-auto font-bold min-w-[200px]">
           {loading ? (
             <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processando...</>
@@ -198,7 +199,15 @@ Cláusula Única: Este é um contrato fictício de uso acadêmico. Nenhum servi�
             'Simular Pagamento e Confirmar'
           )}
         </Button>
-      </DialogFooter>
+      </div>
+    </div>
+  );
+}
+
+export function PaymentDialog({ booking, onSuccess, onCancel }: PaymentFormProps) {
+  return (
+    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <PaymentForm booking={booking} onSuccess={onSuccess} onCancel={onCancel} />
     </DialogContent>
   );
 }

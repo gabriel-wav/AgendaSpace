@@ -45,13 +45,13 @@ export default function ReceivedBookings() {
     }
   };
 
-  const handleUpdateStatus = async (bookingId: string, newStatus: BookingStatus) => {
+  const handleUpdateStatus = async (bookingId: string, payload: any) => {
     setActionInProgress(bookingId);
     try {
-      await updateBookingStatus(bookingId, { status: newStatus });
+      await updateBookingStatus(bookingId, payload);
       toast({
         title: 'Status atualizado com sucesso',
-        description: `A reserva foi marcada como ${getStatusLabel(newStatus).toLowerCase()}.`,
+        description: `A reserva foi atualizada.`,
       });
       await loadBookings();
     } catch (error: any) {
@@ -229,7 +229,14 @@ export default function ReceivedBookings() {
                         <span className="font-semibold text-foreground text-base">
                           {booking.space?.name || 'Espaço sem nome'}
                         </span>
-                        {getStatusBadge(booking.status)}
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(booking.status)}
+                          {isPending && (
+                            <span className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-100/50 px-2 py-0.5 rounded-full border border-amber-200">
+                              {booking.approvalStatus !== 'APPROVED' ? 'Aguardando Aprovação' : 'Aguardando Pagamento'}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
@@ -265,20 +272,22 @@ export default function ReceivedBookings() {
                     <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                       {isPending && (
                         <>
-                          <Button
-                            size="sm"
-                            disabled={isBusy}
-                            onClick={() => handleUpdateStatus(booking.id, 'CONFIRMED')}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                            Aprovar
-                          </Button>
+                          {booking.approvalStatus !== 'APPROVED' && (
+                            <Button
+                              size="sm"
+                              disabled={isBusy}
+                              onClick={() => handleUpdateStatus(booking.id, { approvalStatus: 'APPROVED' })}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                              Aprovar
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
                             disabled={isBusy}
-                            onClick={() => handleUpdateStatus(booking.id, 'CANCELLED')}
+                            onClick={() => handleUpdateStatus(booking.id, { approvalStatus: 'REJECTED' })}
                             className="text-destructive hover:bg-destructive/10 gap-1.5 text-xs h-8"
                           >
                             <Ban className="h-3.5 w-3.5" />
@@ -293,7 +302,7 @@ export default function ReceivedBookings() {
                             size="sm"
                             variant="secondary"
                             disabled={isBusy}
-                            onClick={() => handleUpdateStatus(booking.id, 'COMPLETED')}
+                            onClick={() => handleUpdateStatus(booking.id, { status: 'COMPLETED' })}
                             className="gap-1.5 text-xs h-8"
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />

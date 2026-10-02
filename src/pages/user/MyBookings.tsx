@@ -1,213 +1,188 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Clock, MapPin, Eye, Edit, X, Plus, DollarSign } from 'lucide-react';
+import { Dialog } from '@/components/ui/dialog';
+import { Calendar, Clock, MapPin, Eye, X, Plus, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Dialog } from '@/components/ui/dialog';
 import { PaymentDialog } from '@/components/booking/PaymentDialog';
-import { fetchMyBookings as apiFetchBookings, updateBookingStatus, Booking, BookingStatus } from '@/lib/bookings.api';
+import { BookingDetailsDialog } from '@/components/booking/BookingDetailsDialog';
+import {
+  fetchMyBookings as apiFetchBookings,
+  updateBookingStatus,
+  Booking,
+} from '@/lib/bookings.api';
 import { formatBRL } from '@/lib/utils';
 
-// Booking interface is now imported from bookings.api.ts
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export default function MyBookings() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [paymentBooking, setPaymentBooking] = useState<Booking | null>(null);
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const navigate = useNavigate();
+function getStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (status.toLowerCase()) {
+    case 'confirmed':  return 'default';
+    case 'pending':    return 'secondary';
+    case 'completed':  return 'outline';
+    case 'cancelled':  return 'destructive';
+    default:           return 'secondary';
+  }
+}
 
-  useEffect(() => {
-    if (user) {
-      fetchBookings();
-    }
-  }, [user]);
+function getStatusLabel(status: string): string {
+  switch (status.toLowerCase()) {
+    case 'confirmed':  return 'Confirmada';
+    case 'pending':    return 'Pendente';
+    case 'completed':  return 'Concluída';
+    case 'cancelled':  return 'Cancelada';
+    default:           return status;
+  }
+}
 
-  const fetchBookings = async () => {
-    try {
-      const data = await apiFetchBookings();
-      setBookings(data || []);
-    } catch (error: any) {
-      toast({
-        title: "Erro ao carregar reservas",
-        description: error.message || "Não foi possível carregar as reservas.",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+/** Inline sub-label for PENDING bookings showing what is still missing */
+function pendingSubLabel(booking: Booking): string | null {
+  if (booking.status.toUpperCase() !== 'PENDING') return null;
+  const ap = (booking.approvalStatus || 'PENDING').toUpperCase();
+  const paid = !!booking.payment && booking.payment.status === 'SUCCESS';
+  if (ap === 'REJECTED') return 'Recusada pelo anfitrião';
+  if (paid && ap !== 'APPROVED') return 'Paga · aguardando aprovação';
+  if (!paid && ap === 'APPROVED') return 'Aprovada · aguardando pagamento';
+  return 'Aguardando pagamento e aprovação';
+}
 
-  const cancelBooking = async (bookingId: string) => {
-    if (!confirm('Tem certeza que deseja cancelar esta reserva?')) return;
+/** True only when a payment action makes sense (not paid, not terminal state) */
+function canPay(booking: Booking): boolean {
+  const st = booking.status.toUpperCase();
+  const ap = (booking.approvalStatus || 'PENDING').toUpperCase();
+  const paid = !!booking.payment && booking.payment.status === 'SUCCESS';
+  if (paid) return false;
+  if (st !== 'PENDING') return false;
+  if (ap === 'REJECTED') return false;
+  return true;
+}
 
-    try {
-      await updateBookingStatus(bookingId, { status: 'CANCELLED' });
+function canCancel(booking: Booking): boolean {
+  const hoursUntil =
+    (new Date(booking.startDatetime).getTime() - Date.now()) / (1000 * 60 * 60);
+  return (
+    booking.status.toLowerCase() !== 'cancelled' &&
+    booking.status.toLowerCase() !== 'completed' &&
+    hoursUntil > 2
+  );
+}
 
-      toast({
-        title: "Reserva cancelada",
-        description: "Sua reserva foi cancelada com sucesso."
-      });
+// ─── BookingRow ───────────────────────────────────────────────────────────────
 
-      await fetchBookings();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao cancelar reserva",
-        description: error.message || "Não foi possível cancelar.",
-        variant: "destructive"
-      });
-    }
-  };
+interface BookingRowProps {
+  booking: Booking;
+  onDetails: (b: Booking) => void;
+  onPay: (b: Booking) => void;
+  onCancel: (id: string) => void;
+}
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'confirmed':
-        return 'default';
-      case 'pending':
-        return 'secondary';
-      case 'completed':
-        return 'outline';
-      case 'cancelled':
-        return 'destructive';
-      default:
-        return 'secondary';
-    }
-  };
+function BookingRow({ booking, onDetails, onPay, onCancel }: BookingRowProps) {
+  const sub = pendingSubLabel(booking);
 
-  const getStatusLabel = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'confirmed':
-        return 'Confirmada';
-      case 'pending':
-        return 'Pendente';
-      case 'completed':
-        return 'Concluída';
-      case 'cancelled':
-        return 'Cancelada';
-      default:
-        return status;
-    }
-  };
-
-  const canCancelBooking = (booking: Booking) => {
-    const bookingStart = new Date(booking.startDatetime);
-    const now = new Date();
-    const hoursUntilBooking = (bookingStart.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
-    return booking.status.toLowerCase() !== 'cancelled' && 
-           booking.status.toLowerCase() !== 'completed' && 
-           hoursUntilBooking > 2; // Can cancel up to 2 hours before
-  };
-
-  const categorizeBookings = () => {
-    const upcoming = bookings.filter(booking => 
-      isFuture(new Date(booking.startDatetime)) && 
-      !isToday(new Date(booking.startDatetime)) &&
-      ['pending', 'confirmed'].includes(booking.status.toLowerCase())
-    );
-    
-    const today = bookings.filter(booking => 
-      isToday(new Date(booking.startDatetime)) && 
-      ['pending', 'confirmed'].includes(booking.status.toLowerCase())
-    );
-    
-    const past = bookings.filter(booking => 
-      isPast(new Date(booking.endDatetime)) || 
-      ['completed', 'cancelled'].includes(booking.status.toLowerCase())
-    );
-
-    return { upcoming, today, past };
-  };
-
-  const renderBookingCard = (booking: Booking) => (
-    <Card key={booking.id} className="mb-4">
-      <CardContent className="pt-6">
+  return (
+    <Card className="mb-3">
+      <CardContent className="pt-5 pb-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h3 className="font-medium text-foreground">{booking.space?.name}</h3>
-              <Badge variant={getStatusColor(booking.status)}>
+          {/* Left: space info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h3 className="font-medium text-foreground truncate">{booking.space?.name ?? '—'}</h3>
+              <Badge variant={getStatusVariant(booking.status)}>
                 {getStatusLabel(booking.status)}
               </Badge>
+              {sub && (
+                <span className="text-[10px] sm:text-xs font-medium text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-full border border-amber-200">
+                  {sub}
+                </span>
+              )}
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground">
               <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4 text-primary" />
-                <span>{format(new Date(booking.startDatetime), "dd/MM/yyyy", { locale: ptBR })}</span>
+                <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span>{format(new Date(booking.startDatetime), 'dd/MM/yyyy', { locale: ptBR })}</span>
               </div>
               <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4 text-primary" />
+                <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
                 <span>
-                  {format(new Date(booking.startDatetime), "HH:mm")} - {' '}
-                  {format(new Date(booking.endDatetime), "HH:mm")}
+                  {format(new Date(booking.startDatetime), 'HH:mm')}–
+                  {format(new Date(booking.endDatetime), 'HH:mm')}
                 </span>
               </div>
-              <div className="flex items-center gap-1">
-                <MapPin className="h-4 w-4 text-primary" />
-                <span>{booking.space?.capacity || 'N/A'} pessoas</span>
-              </div>
-              <div>
-                <span className="font-medium text-foreground">{formatBRL(booking.totalPrice)}</span>
+              {booking.space?.capacity && (
+                <div className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>{booking.space.capacity} pessoas</span>
+                </div>
+              )}
+              <div className="font-medium text-foreground">
+                {formatBRL(booking.totalPrice)}
               </div>
             </div>
 
+            {/* Resources chips (truncated) */}
             {booking.space?.resources && booking.space.resources.length > 0 && (
-              <div className="mb-3">
-                <div className="flex flex-wrap gap-1">
-                  {booking.space.resources.map((resource) => (
-                    <Badge key={resource} variant="outline" className="text-xs">
-                      {resource}
-                    </Badge>
-                  ))}
-                </div>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {booking.space.resources.slice(0, 4).map((r) => (
+                  <Badge key={r} variant="outline" className="text-xs">{r}</Badge>
+                ))}
+                {booking.space.resources.length > 4 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{booking.space.resources.length - 4}
+                  </Badge>
+                )}
               </div>
             )}
 
             {booking.notes && (
-              <div className="text-sm border-l-2 border-primary/40 pl-3 mt-2 text-muted-foreground">
-                <span className="font-medium text-foreground">Observações:</span> {booking.notes}
-              </div>
+              <p className="text-xs text-muted-foreground border-l-2 border-primary/30 pl-2 mt-2 line-clamp-1">
+                {booking.notes}
+              </p>
             )}
           </div>
 
-          <div className="flex sm:flex-col gap-2 flex-wrap sm:ml-4 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
-            {booking.status.toLowerCase() === 'pending' && (
-              <Button size="sm" onClick={() => setPaymentBooking(booking)} className="flex-1 sm:flex-none">
-                <DollarSign className="mr-1.5 h-4 w-4" />
-                Pagar para Confirmar
+          {/* Right: actions */}
+          <div className="flex sm:flex-col gap-2 flex-wrap sm:ml-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
+            {/* Pay button — only when payment is actually needed */}
+            {canPay(booking) && (
+              <Button
+                size="sm"
+                onClick={() => onPay(booking)}
+                className="flex-1 sm:flex-none"
+              >
+                <DollarSign className="mr-1.5 h-3.5 w-3.5" />
+                Pagar
               </Button>
             )}
-            <Button 
-              size="sm" 
-              variant="ghost"
-              onClick={() => {
-                toast({
-                  title: "Detalhes da Reserva",
-                  description: `${booking.space?.name} - ${format(new Date(booking.startDatetime), "dd/MM/yyyy HH:mm")}`,
-                });
-              }}
+
+            {/* Details button */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onDetails(booking)}
               className="flex-1 sm:flex-none"
+              aria-label={`Ver detalhes de ${booking.space?.name}`}
             >
-              <Eye className="h-4 w-4 mr-1 sm:mr-0" />
-              <span className="sm:hidden text-xs">Ver</span>
+              <Eye className="h-3.5 w-3.5 mr-1" />
+              <span className="text-xs">Detalhes</span>
             </Button>
-            {canCancelBooking(booking) && (
+
+            {/* Cancel button */}
+            {canCancel(booking) && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => cancelBooking(booking.id)}
+                onClick={() => onCancel(booking.id)}
                 className="text-destructive hover:text-destructive flex-1 sm:flex-none"
               >
-                <X className="h-4 w-4 mr-1" />
+                <X className="h-3.5 w-3.5 mr-1" />
                 <span>{booking.status.toLowerCase() === 'pending' ? 'Cancelar Pedido' : 'Cancelar'}</span>
               </Button>
             )}
@@ -216,14 +191,101 @@ export default function MyBookings() {
       </CardContent>
     </Card>
   );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function MyBookings() {
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Details modal state
+  const [detailsBookingId, setDetailsBookingId] = useState<string | null>(null);
+  const [detailsSeed, setDetailsSeed] = useState<Booking | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  // Payment modal state — only opened via the "Pagar" button
+  const [paymentBooking, setPaymentBooking] = useState<Booking | null>(null);
+
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) fetchBookings();
+  }, [user]);
+
+  const fetchBookings = useCallback(async () => {
+    try {
+      const data = await apiFetchBookings();
+      setBookings(data || []);
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao carregar reservas',
+        description: error.message || 'Não foi possível carregar as reservas.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  const openDetails = (booking: Booking) => {
+    setDetailsSeed(booking);
+    setDetailsBookingId(booking.id);
+    setShowDetails(true);
+  };
+
+  const closeDetails = () => {
+    setShowDetails(false);
+  };
+
+  const openPayment = (booking: Booking) => {
+    setPaymentBooking(booking);
+  };
+
+  const cancelBooking = async (bookingId: string) => {
+    if (!confirm('Tem certeza que deseja cancelar esta reserva?')) return;
+    try {
+      await updateBookingStatus(bookingId, { status: 'CANCELLED' });
+      toast({ title: 'Reserva cancelada', description: 'Sua reserva foi cancelada com sucesso.' });
+      await fetchBookings();
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao cancelar reserva',
+        description: error.message || 'Não foi possível cancelar.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const categorizeBookings = () => {
+    const upcoming = bookings.filter(
+      (b) =>
+        isFuture(new Date(b.startDatetime)) &&
+        !isToday(new Date(b.startDatetime)) &&
+        ['pending', 'confirmed'].includes(b.status.toLowerCase())
+    );
+    const today = bookings.filter(
+      (b) =>
+        isToday(new Date(b.startDatetime)) &&
+        ['pending', 'confirmed'].includes(b.status.toLowerCase())
+    );
+    const past = bookings.filter(
+      (b) =>
+        isPast(new Date(b.endDatetime)) ||
+        ['completed', 'cancelled'].includes(b.status.toLowerCase())
+    );
+    return { upcoming, today, past };
+  };
 
   if (loading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando suas reservas...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
+            <p className="text-muted-foreground">Carregando suas reservas…</p>
           </div>
         </div>
       </AppLayout>
@@ -232,6 +294,29 @@ export default function MyBookings() {
 
   const { upcoming, today, past } = categorizeBookings();
 
+  const EmptyState = ({
+    icon: Icon,
+    title,
+    message,
+    showCTA,
+  }: {
+    icon: React.ElementType;
+    title: string;
+    message: string;
+    showCTA?: boolean;
+  }) => (
+    <Card>
+      <CardContent className="text-center py-12">
+        <Icon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+        <h3 className="text-lg font-medium mb-2">{title}</h3>
+        <p className="text-muted-foreground mb-4">{message}</p>
+        {showCTA && (
+          <Button onClick={() => navigate('/spaces')}>Fazer Nova Reserva</Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -239,114 +324,136 @@ export default function MyBookings() {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Minhas Reservas</h1>
-            <p className="text-muted-foreground mt-1">
-              Gerencie todas as suas reservas de espaços
-            </p>
+            <p className="text-muted-foreground mt-1">Gerencie todas as suas reservas de espaços</p>
           </div>
           <Button onClick={() => navigate('/spaces')} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
-            Fazer Nova Reserva
+            Nova Reserva
           </Button>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{today.length}</div>
-              <p className="text-xs text-muted-foreground">Hoje</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{upcoming.length}</div>
-              <p className="text-xs text-muted-foreground">Próximas</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{bookings.filter(b => b.status.toLowerCase() === 'pending').length}</div>
-              <p className="text-xs text-muted-foreground">Pendentes</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{past.length}</div>
-              <p className="text-xs text-muted-foreground">Históricas</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Hoje', value: today.length },
+            { label: 'Próximas', value: upcoming.length },
+            { label: 'Pendentes', value: bookings.filter((b) => b.status.toLowerCase() === 'pending').length },
+            { label: 'Históricas', value: past.length },
+          ].map(({ label, value }) => (
+            <Card key={label}>
+              <CardContent className="pt-5 pb-4">
+                <div className="text-2xl font-bold">{value}</div>
+                <p className="text-xs text-muted-foreground">{label}</p>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        {/* Bookings Tabs */}
+        {/* Tabs */}
         <Tabs defaultValue="upcoming" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="upcoming">Próximas ({upcoming.length})</TabsTrigger>
             <TabsTrigger value="today">Hoje ({today.length})</TabsTrigger>
-            <TabsTrigger value="past">Históricas ({past.length})</TabsTrigger>
+            <TabsTrigger value="past">Histórico ({past.length})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="upcoming" className="space-y-4">
+          <TabsContent value="upcoming" className="space-y-2 mt-4">
             {upcoming.length > 0 ? (
-              upcoming.map(renderBookingCard)
+              upcoming.map((b) => (
+                <BookingRow
+                  key={b.id}
+                  booking={b}
+                  onDetails={openDetails}
+                  onPay={openPayment}
+                  onCancel={cancelBooking}
+                />
+              ))
             ) : (
-              <Card>
-                <CardContent className="text-center py-12">
-                  <Calendar className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">Nenhuma reserva próxima</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Você não tem reservas agendadas para os próximos dias.
-                  </p>
-                  <Button onClick={() => navigate('/spaces')}>Fazer Nova Reserva</Button>
-                </CardContent>
-              </Card>
+              <EmptyState
+                icon={Calendar}
+                title="Nenhuma reserva próxima"
+                message="Você não tem reservas agendadas para os próximos dias."
+                showCTA
+              />
             )}
           </TabsContent>
 
-          <TabsContent value="today" className="space-y-4">
+          <TabsContent value="today" className="space-y-2 mt-4">
             {today.length > 0 ? (
-              today.map(renderBookingCard)
+              today.map((b) => (
+                <BookingRow
+                  key={b.id}
+                  booking={b}
+                  onDetails={openDetails}
+                  onPay={openPayment}
+                  onCancel={cancelBooking}
+                />
+              ))
             ) : (
-              <Card>
-                <CardContent className="text-center py-12">
-                  <Clock className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">Nenhuma reserva hoje</h3>
-                  <p className="text-muted-foreground">
-                    Você não tem reservas agendadas para hoje.
-                  </p>
-                </CardContent>
-              </Card>
+              <EmptyState
+                icon={Clock}
+                title="Nenhuma reserva hoje"
+                message="Você não tem reservas agendadas para hoje."
+              />
             )}
           </TabsContent>
 
-          <TabsContent value="past" className="space-y-4">
+          <TabsContent value="past" className="space-y-2 mt-4">
             {past.length > 0 ? (
-              past.map(renderBookingCard)
+              past.map((b) => (
+                <BookingRow
+                  key={b.id}
+                  booking={b}
+                  onDetails={openDetails}
+                  onPay={openPayment}
+                  onCancel={cancelBooking}
+                />
+              ))
             ) : (
-              <Card>
-                <CardContent className="text-center py-12">
-                  <Calendar className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">Nenhuma reserva no histórico</h3>
-                  <p className="text-muted-foreground">
-                    Você ainda não tem reservas concluídas ou canceladas.
-                  </p>
-                </CardContent>
-              </Card>
+              <EmptyState
+                icon={Calendar}
+                title="Nenhuma reserva no histórico"
+                message="Você ainda não tem reservas concluídas ou canceladas."
+              />
             )}
           </TabsContent>
         </Tabs>
       </div>
-         <Dialog open={!!paymentBooking} onOpenChange={(open) => !open && setPaymentBooking(null)}>
-         {paymentBooking && (
-           <PaymentDialog
-             booking={paymentBooking}
-             onSuccess={() => {
-               setPaymentBooking(null);
-               fetchBookings();
-             }}
-             onCancel={() => setPaymentBooking(null)}
-           />
-         )}
-       </Dialog>
+
+      {/* ── Details modal ──────────────────────────────────────────────── */}
+      <BookingDetailsDialog
+        bookingId={detailsBookingId}
+        seedBooking={detailsSeed}
+        open={showDetails}
+        onClose={closeDetails}
+        onPayRequest={(b) => {
+          closeDetails();
+          requestAnimationFrame(() => openPayment(b));
+        }}
+      />
+
+      {/* ── Payment modal ──────────────────────────────────────────────── */}
+      <Dialog
+        open={!!paymentBooking}
+        onOpenChange={(open) => { if (!open) setPaymentBooking(null); }}
+      >
+        {paymentBooking && (
+          <PaymentDialog
+            booking={paymentBooking}
+            onSuccess={() => {
+              setPaymentBooking(null);
+              fetchBookings();
+              // Refresh details modal if it was opened for the same booking
+              if (showDetails && detailsBookingId === paymentBooking.id) {
+                // Re-trigger fetch inside BookingDetailsDialog by toggling & re-opening
+                setShowDetails(false);
+                setTimeout(() => setShowDetails(true), 50);
+              }
+            }}
+            onCancel={() => setPaymentBooking(null)}
+          />
+        )}
+      </Dialog>
     </AppLayout>
   );
 }

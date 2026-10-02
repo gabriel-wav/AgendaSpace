@@ -48,7 +48,7 @@ export class SpacesService {
    */
   async findAll(activeOnly = true) {
     return this.prisma.space.findMany({
-      where: activeOnly ? { isActive: true } : undefined,
+      where: activeOnly ? { isActive: true, isDeleted: false } : { isDeleted: false },
       include: {
         createdBy: {
           select: {
@@ -67,7 +67,7 @@ export class SpacesService {
    */
   async findByOwner(userId: string) {
     return this.prisma.space.findMany({
-      where: { createdById: userId },
+      where: { createdById: userId, isDeleted: false },
       include: {
         createdBy: {
           select: {
@@ -110,23 +110,34 @@ export class SpacesService {
    * Apenas o criador original ou um usuário com papel ADMIN podem alterar.
    */
   async update(id: string, userId: string, role: string, dto: UpdateSpaceDto) {
-    const space = await this.findOne(id);
+    return this.prisma.$transaction(async (tx) => {
+      const spaces = await tx.$queryRaw<any[]>`SELECT * FROM spaces WHERE id = ${id} FOR UPDATE`;
+      if (!spaces || spaces.length === 0) {
+        throw new NotFoundException(`Espaço com o ID "${id}" não foi encontrado.`);
+      }
 
-    if (space.createdById !== userId && role !== 'ADMIN') {
-      throw new ForbiddenException('Você não tem permissão para editar este espaço.');
-    }
+      const space = spaces[0];
 
-    return this.prisma.space.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        description: dto.description,
-        capacity: dto.capacity,
-        pricePerHour: dto.pricePerHour,
-        resources: dto.resources !== undefined ? dto.resources : undefined,
-        imageUrl: dto.imageUrl,
-        isActive: dto.isActive,
-      },
+      if (space.is_deleted || space.deleted_at !== null) {
+        throw new ForbiddenException('Não é possível editar ou reativar um espaço excluído.');
+      }
+
+      if (space.created_by !== userId && role !== 'ADMIN') {
+        throw new ForbiddenException('Você não tem permissão para editar este espaço.');
+      }
+
+      return tx.space.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          description: dto.description,
+          capacity: dto.capacity,
+          pricePerHour: dto.pricePerHour,
+          resources: dto.resources !== undefined ? dto.resources : undefined,
+          imageUrl: dto.imageUrl,
+          isActive: dto.isActive,
+        },
+      });
     });
   }
 
@@ -135,16 +146,28 @@ export class SpacesService {
    * Apenas o criador ou ADMIN podem realizar a operação.
    */
   async remove(id: string, userId: string, role: string) {
-    const space = await this.findOne(id);
+    return this.prisma.$transaction(async (tx) => {
+      const spaces = await tx.$queryRaw<any[]>`SELECT * FROM spaces WHERE id = ${id} FOR UPDATE`;
+      if (!spaces || spaces.length === 0) {
+        throw new NotFoundException(`Espaço com o ID "${id}" não foi encontrado.`);
+      }
 
-    if (space.createdById !== userId && role !== 'ADMIN') {
-      throw new ForbiddenException('Você não tem permissão para remover este espaço.');
-    }
+      const space = spaces[0];
 
-    // Soft delete para manter o histórico de reservas íntegro
-    return this.prisma.space.update({
-      where: { id },
-      data: { isActive: false },
+      if (space.created_by !== userId && role !== 'ADMIN') {
+        throw new ForbiddenException('Você não tem permissão para remover este espaço.');
+      }
+
+      if (space.is_deleted || space.deleted_at !== null) {
+        // Idempotente se já excluído
+        return tx.space.findUnique({ where: { id } });
+      }
+
+      // Soft delete permanente e independente de isActive
+      return tx.space.update({
+        where: { id },
+        data: { isDeleted: true, deletedAt: new Date(), isActive: false },
+      });
     });
   }
 }

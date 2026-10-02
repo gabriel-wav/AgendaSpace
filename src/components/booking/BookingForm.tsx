@@ -11,7 +11,7 @@ import { CalendarIcon, Clock, DollarSign, MapPin, Users, AlertCircle, Loader2 } 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { createBooking, fetchSpaceBookings, SpaceBookingSlot } from '@/lib/bookings.api';
+import { createBooking, fetchSpaceBookings, SpaceBookingSlot, Booking } from '@/lib/bookings.api';
 import { formatBRL } from '@/lib/utils';
 
 export interface BookingSpace {
@@ -28,7 +28,7 @@ export interface BookingSpace {
 
 interface BookingFormProps {
   space: BookingSpace;
-  onSuccess?: () => void;
+  onSuccess?: (booking: Booking, action: 'PAY_NOW' | 'PAY_LATER') => void;
   onCancel?: () => void;
 }
 
@@ -46,6 +46,7 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
   const [endTime, setEndTime] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [submitAction, setSubmitAction] = useState<'PAY_NOW' | 'PAY_LATER'>('PAY_NOW');
   const [fetchingSlots, setFetchingSlots] = useState(false);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [existingBookings, setExistingBookings] = useState<SpaceBookingSlot[]>([]);
@@ -225,11 +226,12 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
     return true;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent | React.MouseEvent, action: 'PAY_NOW' | 'PAY_LATER') => {
     e.preventDefault();
     if (!validateBooking()) return;
 
     setLoading(true);
+    setSubmitAction(action);
     try {
       const bookingStart = new Date(selectedDate!);
       bookingStart.setHours(parseInt(startTime, 10), 0, 0, 0);
@@ -237,7 +239,7 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
       const bookingEnd = new Date(selectedDate!);
       bookingEnd.setHours(parseInt(endTime, 10), 0, 0, 0);
 
-      await createBooking({
+      const createdBooking = await createBooking({
         spaceId: space.id,
         startDatetime: bookingStart.toISOString(),
         endDatetime: bookingEnd.toISOString(),
@@ -246,10 +248,10 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
 
       toast({
         title: 'Reserva solicitada!',
-        description: 'Sua reserva foi criada com sucesso e aguarda confirmação.',
+        description: action === 'PAY_NOW' ? 'Redirecionando para pagamento...' : 'Sua reserva foi criada com sucesso.',
       });
 
-      onSuccess?.();
+      onSuccess?.(createdBooking, action);
     } catch (error: any) {
       const message =
         error.response?.data?.message ||
@@ -292,7 +294,7 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form className="space-y-5">
       {/* Space Overview Card */}
       <div className="flex flex-col sm:flex-row gap-3 p-3.5 bg-muted/40 border border-border/60 rounded-xl items-start sm:items-center justify-between">
         <div className="flex items-center gap-3">
@@ -520,23 +522,40 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
             variant="outline"
             onClick={onCancel}
             disabled={loading}
-            className="w-full sm:w-1/3"
+            className="w-full sm:w-auto"
           >
             Cancelar
           </Button>
         )}
         <Button
-          type="submit"
+          type="button"
+          onClick={(e) => handleSubmit(e, 'PAY_LATER')}
+          disabled={loading || !selectedDate || !startTime || !endTime}
+          variant="secondary"
+          className="w-full sm:flex-1 font-semibold"
+        >
+          {loading && submitAction === 'PAY_LATER' ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Salvando...
+            </>
+          ) : (
+            'Pagar Depois'
+          )}
+        </Button>
+        <Button
+          type="button"
+          onClick={(e) => handleSubmit(e, 'PAY_NOW')}
           disabled={loading || !selectedDate || !startTime || !endTime}
           className="w-full sm:flex-1 font-semibold"
         >
-          {loading ? (
+          {loading && submitAction === 'PAY_NOW' ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Processando reserva...
+              Processando...
             </>
           ) : (
-            'Confirmar Reserva'
+            'Pagar Agora'
           )}
         </Button>
       </div>

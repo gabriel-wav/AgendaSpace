@@ -593,6 +593,7 @@ export default function AdminSpaces({ mode = 'admin' }: { mode?: 'admin' | 'host
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Space | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
 
@@ -638,19 +639,20 @@ export default function AdminSpaces({ mode = 'admin' }: { mode?: 'admin' | 'host
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
     if (!deleteTarget) return;
+    setIsDeleting(true);
     try {
       await deleteSpace(deleteTarget);
-      setSpaces((prev) =>
-        prev.map((s) => (s.id === deleteTarget ? { ...s, isActive: false } : s))
-      );
-      toast({ title: 'Espaço desativado com sucesso.' });
+      setSpaces((prev) => prev.filter((s) => s.id !== deleteTarget));
+      toast({ title: 'Espaço excluído com sucesso.' });
+      setDeleteTarget(null);
     } catch (err: any) {
       const message = err.response?.data?.message || err.message;
       toast({ title: 'Erro ao excluir', description: message, variant: 'destructive' });
     } finally {
-      setDeleteTarget(null);
+      setIsDeleting(false);
     }
   };
 
@@ -779,21 +781,22 @@ export default function AdminSpaces({ mode = 'admin' }: { mode?: 'admin' | 'host
       />
 
       {/* Delete confirmation dialog */}
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(v) => !v && !isDeleting && setDeleteTarget(null)}>
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-base">Excluir espaço?</AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground">
-              Esta ação desativará o espaço. O histórico de reservas existentes permanecerá preservado.
+              Você tem certeza que deseja excluir o espaço <strong>{spaces.find(s => s.id === deleteTarget)?.name}</strong>? Esta ação é irreversível e o anúncio não poderá ser reativado. O histórico de reservas existentes permanecerá preservado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="text-sm">Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting} className="text-sm">Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
+              disabled={isDeleting}
               className="bg-destructive text-destructive-foreground text-sm hover:bg-destructive/90"
             >
-              Excluir
+              {isDeleting ? 'Excluindo...' : 'Excluir'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

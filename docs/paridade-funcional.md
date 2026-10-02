@@ -25,12 +25,12 @@
 | 7 | **Solicitação de Reserva (Cliente)** | 🟡 Parcial no projeto atual | Formulário funcional; checagem TOCTOU sem atomicidade | Etapa 5 |
 | 8 | **Minhas Reservas e Detalhes** | 🟡 Parcial no projeto atual | Mistura reservas de cliente com reservas de anfitrião | Etapa 6 |
 | 9 | **Cancelamento de Reservas** | 🟡 Parcial no projeto atual | Operacional; falta validação de antecedência no backend | Etapa 6 |
-| 10 | **Pagamento (PIX/Cartão) e Contrato** | 🔴 Funcionava e regrediu | Cliente recebe 403 ao confirmar pagamento; falta atomicidade | Etapa 7 |
-| 11 | **Reservas Recebidas pelo Anfitrião** | ⚪ Já incompleta antes | Inexistente na interface para anfitriões da conta única | Etapa 6 |
+| 10 | **Pagamento (PIX/Cartão) e Contrato** | 🟢 Concluído | Processo separado da aprovação, atomicidade aplicada | Etapa 7 |
+| 11 | **Reservas Recebidas pelo Anfitrião** | 🟢 Concluído | Aba própria na conta única; escopo de acesso validado | Etapa 6 |
 | 12 | **Gestão Global de Reservas e Usuários (Admin)** | 🟡 Parcial no projeto atual | Operacional para ADMIN; faltam filtros por anfitrião | Etapa 8 |
-| 13 | **Dashboards e Relatórios** | 🔴 Funcionava e regrediu | Métricas artificiais e ausência de endpoints analíticos | Etapa 9 |
+| 13 | **Dashboards e Relatórios** | 🟢 Concluído | Métricas corrigidas para refletir regras reais (apenas CONFIRMED conta) | Etapa 9 |
 | 14 | **Gerenciamento de Perfil do Usuário** | 🟡 Parcial no projeto atual | Salva nome/email/avatar; campos bio/phone não persistem | Etapa 10 |
-| 15 | **Feed da Comunidade e Moderação Multi-Database** | ⚪ Já incompleta antes (Frontend) | Backend com Mongoose pronto; frontend 100% estático/mock | Etapa 11 |
+| 15 | **Feed da Comunidade e Moderação Multi-Database** | 🟢 Concluído | Feed integrado Mongoose-MySQL com fallback em caso de erros | Etapa 11 |
 
 ---
 

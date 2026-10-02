@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
 
 export enum BookingStatusEnum {
   PENDING = 'PENDING',
@@ -7,8 +7,18 @@ export enum BookingStatusEnum {
   CANCELLED = 'CANCELLED',
 }
 
+export enum ApprovalStatusEnum {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+}
+
 export class UpdateBookingStatusDto {
+  @IsOptional()
   @IsEnum(BookingStatusEnum, { message: 'Status de reserva inválido' })
-  @IsNotEmpty({ message: 'O status é obrigatório' })
-  status: BookingStatusEnum;
+  status?: BookingStatusEnum;
+
+  @IsOptional()
+  @IsEnum(ApprovalStatusEnum, { message: 'Status de aprovação inválido' })
+  approvalStatus?: ApprovalStatusEnum;
 }

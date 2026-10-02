@@ -99,6 +99,10 @@ export class BookingsService {
       throw new NotFoundException(`Espaço com ID "${dto.spaceId}" não encontrado.`);
     }
 
+    if (space.isDeleted || space.deletedAt !== null) {
+      throw new BadRequestException('Este espaço foi excluído e não está mais disponível.');
+    }
+
     if (!space.isActive) {
       throw new BadRequestException('Este espaço está desativado para novas reservas.');
     }
@@ -330,106 +334,187 @@ export class BookingsService {
     const isAdmin = role === 'ADMIN';
 
     if (!isOwnerOfSpace && !isAdmin && !isClient) {
-      throw new ForbiddenException('Você não tem permissão para alterar este status.');
+      throw new ForbiddenException('Você não tem permissão para alterar esta reserva.');
     }
 
-    if (booking.status === dto.status) {
-      // Repetição da ação já concluída (Idempotência sem efeito duplicado)
-      return booking;
-    }
+    if (dto.approvalStatus) {
+      if (!isOwnerOfSpace && !isAdmin) {
+        throw new ForbiddenException('Apenas o proprietário ou ADMIN podem aprovar/recusar reservas.');
+      }
 
-    const currentStatus = booking.status;
-    const targetStatus = dto.status;
+      if (booking.approvalStatus === dto.approvalStatus) {
+        return booking;
+      }
 
-    // Mapa de transição centralizado
-    const allowedTransitions: Record<string, BookingStatusEnum[]> = {
-      [BookingStatusEnum.PENDING]: [BookingStatusEnum.CONFIRMED, BookingStatusEnum.CANCELLED],
-      [BookingStatusEnum.CONFIRMED]: [BookingStatusEnum.COMPLETED, BookingStatusEnum.CANCELLED],
-      [BookingStatusEnum.COMPLETED]: [],
-      [BookingStatusEnum.CANCELLED]: [],
-    };
+      if (dto.approvalStatus === 'REJECTED') {
+        // Se houver pagamento simulado, podemos registrar reversão no futuro
+        return this.prisma.booking.update({
+          where: { id },
+          data: {
+            approvalStatus: 'REJECTED',
+            approvedAt: new Date(),
+            approvedById: userId,
+            status: 'CANCELLED',
+          },
+        });
+      }
 
-    if (!allowedTransitions[currentStatus].includes(targetStatus)) {
-      throw new BadRequestException(`Transição de status inválida de ${currentStatus} para ${targetStatus}.`);
-    }
-
-    if (isClient && !isOwnerOfSpace && !isAdmin) {
-      if (targetStatus === BookingStatusEnum.CANCELLED) {
-        if (booking.startDatetime.getTime() - Date.now() < 2 * 60 * 60 * 1000) {
-          throw new BadRequestException('Cancelamentos devem ser feitos com no mínimo 2 horas de antecedência.');
+      if (dto.approvalStatus === 'APPROVED') {
+        if (booking.startDatetime.getTime() < Date.now()) {
+          throw new BadRequestException('Não é possível aprovar uma reserva após o início do período.');
         }
-      } else {
-        throw new ForbiddenException('Clientes só podem cancelar via atualização de status. Use a rota de pagamento para confirmar.');
+
+        return this.prisma.$transaction(
+          async (tx) => {
+            const spaces = await tx.$queryRaw<any[]>`SELECT is_deleted, deleted_at FROM spaces WHERE id = ${booking.spaceId} FOR UPDATE`;
+
+            if (spaces[0].is_deleted || spaces[0].deleted_at !== null) {
+              throw new ConflictException('Não é possível aprovar a reserva pois o espaço foi excluído.');
+            }
+
+            const hasPayment = await tx.payment.findUnique({ where: { bookingId: id } });
+
+            if (hasPayment) {
+              const conflict = await tx.booking.findFirst({
+                where: {
+                  id: { not: booking.id },
+                  spaceId: booking.spaceId,
+                  status: {
+                    in: ['CONFIRMED', 'COMPLETED'],
+                  },
+                  AND: [
+                    { startDatetime: { lt: booking.endDatetime } },
+                    { endDatetime: { gt: booking.startDatetime } },
+                  ],
+                },
+              });
+
+              if (conflict) {
+                throw new ConflictException('Não é possível confirmar a reserva pois já existe outra reserva conflitante para este horário.');
+              }
+
+              return tx.booking.update({
+                where: { id },
+                data: {
+                  status: 'CONFIRMED',
+                  approvalStatus: 'APPROVED',
+                  approvedAt: new Date(),
+                  approvedById: userId,
+                },
+              });
+            }
+
+            return tx.booking.update({
+              where: { id },
+              data: {
+                approvalStatus: 'APPROVED',
+                approvedAt: new Date(),
+                approvedById: userId,
+              },
+            });
+          }
+        );
       }
     }
 
-    // Se o status estiver sendo alterado para CONFIRMED (apenas manual por host/admin chega aqui)
-    if (targetStatus === BookingStatusEnum.CONFIRMED) {
-      return this.prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT id FROM Space WHERE id = ${booking.spaceId} FOR UPDATE`;
+    if (dto.status) {
+      if (booking.status === dto.status) {
+        return booking;
+      }
 
-          const conflict = await tx.booking.findFirst({
-            where: {
-              id: { not: booking.id },
-              spaceId: booking.spaceId,
-              status: {
-                in: [BookingStatusEnum.CONFIRMED, BookingStatusEnum.COMPLETED],
-              },
-              AND: [
-                { startDatetime: { lt: booking.endDatetime } },
-                { endDatetime: { gt: booking.startDatetime } },
-              ],
-            },
-          });
+      const currentStatus = booking.status;
+      const targetStatus = dto.status;
 
-          if (conflict) {
-            throw new ConflictException('Não é possível confirmar a reserva pois já existe outra reserva conflitante para este horário.');
+      const allowedTransitions: Record<string, string[]> = {
+        PENDING: ['CONFIRMED', 'CANCELLED'],
+        CONFIRMED: ['COMPLETED', 'CANCELLED'],
+        COMPLETED: [],
+        CANCELLED: [],
+      };
+
+      if (!allowedTransitions[currentStatus].includes(targetStatus)) {
+        throw new BadRequestException(`Transição de status inválida de ${currentStatus} para ${targetStatus}.`);
+      }
+
+      if (isClient && !isOwnerOfSpace && !isAdmin) {
+        if (targetStatus === 'CANCELLED') {
+          if (booking.startDatetime.getTime() - Date.now() < 2 * 60 * 60 * 1000) {
+            throw new BadRequestException('Cancelamentos devem ser feitos com no mínimo 2 horas de antecedência.');
           }
-
-          // A confirmação manual não gera pagamento e não invenata aceite de contrato
-          return tx.booking.update({
-            where: { id },
-            data: { status: targetStatus },
-          });
+        } else {
+          throw new ForbiddenException('Clientes só podem cancelar via atualização de status. Use a rota de pagamento para confirmar.');
         }
-      );
+      }
+
+      if (targetStatus === 'CONFIRMED') {
+        throw new BadRequestException('Não utilize atualização direta de status para confirmar. Use a rota de pagamento ou aprove a reserva.');
+      }
+
+      if (targetStatus === 'COMPLETED' && booking.endDatetime.getTime() > Date.now()) {
+        throw new BadRequestException('Não é possível concluir uma reserva antes do término do seu horário programado.');
+      }
+
+      return this.prisma.booking.update({
+        where: { id },
+        data: { status: targetStatus as any },
+      });
     }
 
-    // Para COMPLETED
-    if (targetStatus === BookingStatusEnum.COMPLETED && booking.endDatetime.getTime() > Date.now()) {
-      throw new BadRequestException('Não é possível concluir uma reserva antes do término do seu horário programado.');
-    }
-
-    return this.prisma.booking.update({
-      where: { id },
-      data: { status: targetStatus },
-    });
+    return booking;
   }
 
   /**
    * Lida com a simulação de pagamento acadêmico, aceite de contrato e confirmação da reserva.
    */
   async pay(id: string, userId: string, dto: PayBookingDto) {
-    // Buscar reserva original
+    // Buscar reserva original com payment para verificar idempotência antes
     const booking = await this.prisma.booking.findUnique({
       where: { id, userId },
-      include: { space: true },
+      include: { space: true, payment: true },
     });
 
     if (!booking) {
       throw new NotFoundException(`Reserva com ID "${id}" não encontrada ou não pertence a você.`);
     }
 
-    if (booking.status !== BookingStatusEnum.PENDING) {
+    // Verificação de idempotência e retries independentes de status PENDING
+    if (booking.payment && booking.payment.idempotencyKey === dto.idempotencyKey) {
+      return booking;
+    }
+    
+    if (booking.payment) {
+       throw new BadRequestException('Esta reserva já possui um pagamento registrado.');
+    }
+
+    if (booking.status !== 'PENDING') {
       throw new BadRequestException('Apenas reservas pendentes podem ser pagas.');
+    }
+
+    if (booking.startDatetime.getTime() < Date.now()) {
+      throw new BadRequestException('Não é possível pagar uma reserva após o início do período.');
     }
 
     // Usar transação atômica
     return this.prisma.$transaction(
       async (tx) => {
-        // Bloqueia a linha do espaço
-        await tx.$queryRaw`SELECT id FROM Space WHERE id = ${booking.spaceId} FOR UPDATE`;
+        // Bloqueia a linha do espaço e checa exclusão
+        const spaces = await tx.$queryRaw<any[]>`SELECT is_deleted, deleted_at FROM spaces WHERE id = ${booking.spaceId} FOR UPDATE`;
+
+        if (spaces[0].is_deleted || spaces[0].deleted_at !== null) {
+          throw new ConflictException('Não é possível confirmar a reserva pois o espaço foi excluído.');
+        }
+
+        // Idempotência extra dentro da transação para concorrência
+        const existingPayment = await tx.payment.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+        });
+
+        if (existingPayment) {
+          if (existingPayment.bookingId !== booking.id) {
+            throw new BadRequestException('Chave de idempotência reutilizada de forma inválida.');
+          }
+          return tx.booking.findUnique({ where: { id: booking.id } });
+        }
 
         // Verifica conflitos
         const conflict = await tx.booking.findFirst({
@@ -437,7 +522,7 @@ export class BookingsService {
             id: { not: booking.id },
             spaceId: booking.spaceId,
             status: {
-              in: [BookingStatusEnum.CONFIRMED, BookingStatusEnum.COMPLETED],
+              in: ['CONFIRMED', 'COMPLETED'],
             },
             AND: [
               { startDatetime: { lt: booking.endDatetime } },
@@ -448,19 +533,6 @@ export class BookingsService {
 
         if (conflict) {
           throw new ConflictException('Não é possível confirmar a reserva pois o horário já foi ocupado por outra pessoa.');
-        }
-
-        // Idempotência: verificar se este pagamento já ocorreu
-        const existingPayment = await tx.payment.findUnique({
-          where: { idempotencyKey: dto.idempotencyKey },
-        });
-
-        if (existingPayment) {
-          if (existingPayment.bookingId !== booking.id) {
-            throw new BadRequestException('Chave de idempotência reutilizada de forma inválida.');
-          }
-          // Retorna silenciosamente a reserva atualizada caso seja a mesma requisição duplicada
-          return tx.booking.findUnique({ where: { id: booking.id } });
         }
 
         // Registrar o contrato
@@ -484,11 +556,15 @@ export class BookingsService {
           },
         });
 
-        // Atualizar reserva para CONFIRMED
-        return tx.booking.update({
-          where: { id: booking.id },
-          data: { status: BookingStatusEnum.CONFIRMED },
-        });
+        if (booking.approvalStatus === 'APPROVED') {
+          // Atualizar reserva para CONFIRMED
+          return tx.booking.update({
+            where: { id: booking.id },
+            data: { status: 'CONFIRMED' },
+          });
+        }
+
+        return tx.booking.findUnique({ where: { id: booking.id } });
       }
     );
   }

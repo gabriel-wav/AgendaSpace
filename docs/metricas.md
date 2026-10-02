@@ -15,7 +15,7 @@ Este documento define os critérios exatos para o cálculo de indicadores exibid
 2. **Reservas Hoje**
    - **Descrição**: Volume de reservas acontecendo na data atual.
    - **Cálculo**: `COUNT(Booking)` onde `startDatetime` está entre `00:00:00` e `23:59:59` de "Hoje" (America/Sao_Paulo).
-   - **Filtro**: Ignora status `CANCELLED`. Inclui `PENDING`, `CONFIRMED` e `COMPLETED`.
+   - **Filtro**: Apenas status `CONFIRMED`. Ignora `PENDING`, `CANCELLED` e `COMPLETED`.
 
 3. **Receita Mensal**
    - **Descrição**: Dinheiro real simulado retido no mês corrente.
@@ -36,8 +36,8 @@ O anfitrião não vê métricas financeiras ou de volume geradas por espaços de
 
 ## Indicadores - Visão Cliente (User Dashboard)
 1. **Próximas Reservas**
-   - **Cálculo**: Contagem de reservas onde `startDatetime >= now()` e status é `PENDING` ou `CONFIRMED`.
+   - **Cálculo**: Contagem de reservas onde `startDatetime >= now()` e status é estritamente `CONFIRMED` (requer aprovação e pagamento).
 2. **Tempo Total (Horas)**
    - **Cálculo**: Soma das horas (`endDatetime - startDatetime`) das reservas contempladas pelo indicador acima.
 3. **Espaços Disponíveis**
-   - **Cálculo**: O mesmo número global `COUNT(Space) onde isActive = true`.
+   - **Cálculo**: O mesmo número global `COUNT(Space) onde isActive = true E is_deleted = false`.

@@ -6,19 +6,26 @@ import { Calendar, MapPin, Clock, Search, Plus, Building2, Eye, TrendingUp } fro
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { BookingForm } from '@/components/booking/BookingForm';
+import { Dialog } from '@/components/ui/dialog';
+import { BookingFlowDialog } from '@/components/booking/BookingFlowDialog';
+import { BookingDetailsDialog } from '@/components/booking/BookingDetailsDialog';
+import { PaymentDialog } from '@/components/booking/PaymentDialog';
+import { Booking } from '@/lib/bookings.api';
 import { fetchSpaces } from '@/lib/spaces.api';
 import { fetchClientStats, fetchHostStats } from '@/lib/dashboard.api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { User } from 'lucide-react';
 
 export function UserDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedBooking, setSelectedBooking] = useState<any>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [selectedBookingSeed, setSelectedBookingSeed] = useState<Booking | null>(null);
   const [selectedSpace, setSelectedSpace] = useState<any>(null);
+  const [bookingToPay, setBookingToPay] = useState<Booking | null>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -89,9 +96,16 @@ export function UserDashboard() {
           </Link>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
+        {/* Painel do Usuário */}
+        <div className="mt-8 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <User className="h-5 w-5 text-primary" />
+              Painel do Usuário
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Próximas Reservas</CardTitle>
               <Calendar className="h-4 w-4 text-primary" />
@@ -124,8 +138,9 @@ export function UserDashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
 
-        {/* Visão de Anfitrião (Host) */}
+      {/* Visão de Anfitrião (Host) */}
         {hostStats && (
           <div className="mt-8 mb-4">
             <div className="flex items-center justify-between mb-4">
@@ -228,80 +243,22 @@ export function UserDashboard() {
                            String(booking.status).toUpperCase() === 'COMPLETED' ? 'Realizado' : 'Cancelado'}
                         </Badge>
                         <div className="mt-2">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => setSelectedBooking(booking)}
-                              >
-                                <Eye className="mr-1 h-3 w-3" />
-                                Detalhes
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-md">
-                              <DialogHeader>
-                                <DialogTitle>Detalhes da Reserva</DialogTitle>
-                              </DialogHeader>
-                              {selectedBooking && (
-                                <div className="space-y-4">
-                                  <div>
-                                    <h3 className="font-medium text-lg">{(selectedBooking.space || selectedBooking.spaces)?.name}</h3>
-                                    <p className="text-muted-foreground">
-                                      {format(new Date(selectedBooking.startDatetime || selectedBooking.start_datetime), "dd/MM/yyyy", { locale: ptBR })}
-                                    </p>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <p className="text-sm font-medium">Horário</p>
-                                      <p className="text-sm text-muted-foreground">
-                                        {format(new Date(selectedBooking.startDatetime || selectedBooking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(selectedBooking.endDatetime || selectedBooking.end_datetime), "HH:mm", { locale: ptBR })}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium">Preço Total</p>
-                                      <p className="text-sm text-muted-foreground">R$ {selectedBooking.totalPrice || selectedBooking.total_price}</p>
-                                    </div>
-                                  </div>
-
-                                <div>
-                                  <p className="text-sm font-medium mb-2">Recursos</p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {(selectedBooking.space || selectedBooking.spaces)?.resources?.map((resource: string) => (
-                                      <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                        {resource}
-                                      </span>
-                                    )) || <span className="text-xs text-muted-foreground">Nenhum recurso específico</span>}
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <p className="text-sm font-medium">Status</p>
-                                  <Badge 
-                                    variant={selectedBooking.status === 'confirmed' ? 'default' : selectedBooking.status === 'pending' ? 'secondary' : 'outline'}
-                                    className="mt-1"
-                                  >
-                                    {selectedBooking.status === 'confirmed' ? 'Confirmado' : 
-                                     selectedBooking.status === 'pending' ? 'Pendente' : 
-                                     selectedBooking.status === 'completed' ? 'Realizado' : 'Cancelado'}
-                                  </Badge>
-                                </div>
-
-                                {selectedBooking.notes && (
-                                  <div>
-                                    <p className="text-sm font-medium">Observações</p>
-                                    <p className="text-sm text-muted-foreground">{selectedBooking.notes}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </DialogContent>
-                        </Dialog>
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             onClick={() => {
+                               setSelectedBookingSeed(booking as Booking);
+                               setSelectedBookingId(booking.id);
+                               setDetailsOpen(true);
+                             }}
+                           >
+                             <Eye className="mr-1 h-3 w-3" />
+                             Detalhes
+                           </Button>
+                         </div>
                       </div>
                     </div>
-                  </div>
-                );
+                  );
               })}
             </div>
             ) : (
@@ -367,32 +324,44 @@ export function UserDashboard() {
         </Card>
       </div>
 
-      {/* Booking Modal */}
-      <Dialog open={!!selectedSpace} onOpenChange={(open) => !open && setSelectedSpace(null)}>
-        <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl">
-          {selectedSpace && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-xl flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-primary" />
-                  Reservar {selectedSpace.name}
-                </DialogTitle>
-                <DialogDescription>
-                  Escolha a data e o período desejado para solicitar a sua reserva.
-                </DialogDescription>
-              </DialogHeader>
-              <BookingForm 
-                space={selectedSpace}
-                onSuccess={() => {
-                  setSelectedSpace(null);
-                  fetchData();
-                }}
-                onCancel={() => setSelectedSpace(null)}
-              />
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Booking Flow Modal */}
+      <BookingFlowDialog
+        space={selectedSpace}
+        open={!!selectedSpace}
+        onOpenChange={(open) => !open && setSelectedSpace(null)}
+        onCompleted={() => {
+          setSelectedSpace(null);
+          fetchData();
+        }}
+      />
+
+
+      {/* Booking Details Modal */}
+      <BookingDetailsDialog
+        bookingId={selectedBookingId}
+        seedBooking={selectedBookingSeed}
+        open={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        onPayRequest={(b) => {
+          setDetailsOpen(false);
+          requestAnimationFrame(() => setBookingToPay(b));
+        }}
+      />
+
+      {bookingToPay && (
+        <Dialog open={true} onOpenChange={(open) => !open && setBookingToPay(null)}>
+          <PaymentDialog
+            booking={bookingToPay}
+            onSuccess={() => {
+              setBookingToPay(null);
+              fetchData();
+            }}
+            onCancel={() => {
+              setBookingToPay(null);
+            }}
+          />
+        </Dialog>
+      )}
     </AppLayout>
   );
 }

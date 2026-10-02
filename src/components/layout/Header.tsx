@@ -223,6 +223,7 @@ export function Header() {
   ];
 
   const userNav: NavItem[] = [
+    { label: 'Dashboard',          href: '/dashboard',     icon: LayoutDashboard },
     { label: 'Explorar',           href: '/spaces',        icon: Compass },
     { label: 'Minhas Reservas',    href: '/my-bookings',   icon: Calendar },
     { label: 'Meus Espaços',       href: '/my-spaces',     icon: Building2 },

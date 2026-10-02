@@ -129,41 +129,27 @@ export default function FeedPage() {
       imageFile: File;
     }) => {
       const url = await uploadFile(imageFile, 'feed');
-      if (!url) return; // Hook handles error toast
+      if (!url) {
+        throw new Error('Falha no upload da imagem.');
+      }
 
       try {
-        const created = await apiCreatePost({
+        await apiCreatePost({
           spaceId,
-          description: content,
+          content,
           imageUrl: url,
         });
 
-        const space = spaces.find((s) => s.id === spaceId) ?? { id: spaceId, name: '' };
-        
-        const newPost: FeedPost = {
-          id: (created as any).id || (created as any)._id,
-          author: {
-            id: user?.id ?? 'me',
-            name: user?.fullName ?? 'Você',
-            avatarUrl: user?.avatarUrl,
-          },
-          space,
-          imageUrl: url,
-          content: created.content || content,
-          likesCount: 0,
-          likedByMe: false,
-          totalComments: 0,
-          recentComments: [],
-          createdAt: created.createdAt || new Date().toISOString(),
-        };
-
-        setPosts((prev) => [newPost, ...prev]);
+        // Recarrega todo o feed para obter os relacionamentos enriquecidos do banco
+        const postsData = await fetchGlobalPosts();
+        setPosts(postsData as unknown as FeedPost[]);
         toast({ title: 'Sucesso', description: 'Publicação criada!' });
-      } catch (error) {
-        toast({ title: 'Erro', description: 'Não foi possível criar publicação.', variant: 'destructive' });
+      } catch (error: any) {
+        toast({ title: 'Erro', description: error.response?.data?.message || 'Não foi possível criar publicação.', variant: 'destructive' });
+        throw error; // Let NewPostInput know it failed
       }
     },
-    [user, uploadFile, spaces, toast]
+    [uploadFile, toast]
   );
 
   // Delete a post

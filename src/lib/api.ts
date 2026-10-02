@@ -3,7 +3,13 @@ import axios from 'axios';
 // ─── Base URL ─────────────────────────────────────────────────────────────────
 // Reads from Vite env. Set VITE_API_URL in your .env file.
 // Example: VITE_API_URL=http://localhost:3000
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+export const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
+export function getAbsoluteImageUrl(url: string | undefined | null): string | undefined {
+  if (!url) return undefined;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
+  return `${BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
 
 // ─── Storage key ─────────────────────────────────────────────────────────────
 export const TOKEN_KEY = 'agendaspace_token';

@@ -31,7 +31,7 @@ export interface Post {
 export interface CreatePostPayload {
   spaceId: string;
   imageUrl?: string;
-  description?: string;
+  content: string;
 }
 
 export interface CreateCommentPayload {

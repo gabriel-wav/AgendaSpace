@@ -41,7 +41,7 @@ export class DashboardService {
       where: {
         status: 'SUCCESS',
         createdAt: { gte: startOfMonth, lte: endOfMonth },
-        booking: { status: { not: 'CANCELLED' } }
+        booking: { status: { in: ['CONFIRMED', 'COMPLETED'] } }
       }
     });
     
@@ -89,7 +89,7 @@ export class DashboardService {
         createdAt: { gte: startOfMonth, lte: endOfMonth },
         booking: {
           spaceId: { in: spaceIds },
-          status: { not: 'CANCELLED' }
+          status: { in: ['CONFIRMED', 'COMPLETED'] }
         }
       }
     });
@@ -106,31 +106,40 @@ export class DashboardService {
   async getClientStats(userId: string) {
     const now = new Date();
     
-    const upcomingBookings = await this.prisma.booking.findMany({
+    const recentBookings = await this.prisma.booking.findMany({
       where: {
         userId,
         startDatetime: { gte: now },
         status: { in: ['PENDING', 'CONFIRMED'] }
       },
       include: {
-        space: { select: { name: true, capacity: true, resources: true } }
+        space: { select: { name: true, capacity: true, resources: true } },
+        payment: { select: { id: true, status: true } }
       },
       orderBy: { startDatetime: 'asc' },
       take: 5
     });
 
-    const totalUpcomingHours = upcomingBookings.reduce((acc, b) => {
+    const confirmedCount = await this.prisma.booking.count({
+      where: {
+        userId,
+        startDatetime: { gte: now },
+        status: 'CONFIRMED'
+      }
+    });
+
+    const totalUpcomingHours = recentBookings.reduce((acc, b) => {
       const hours = (b.endDatetime.getTime() - b.startDatetime.getTime()) / (1000 * 60 * 60);
       return acc + (isNaN(hours) ? 0 : hours);
     }, 0);
 
-    const activeSpaces = await this.prisma.space.count({ where: { isActive: true } });
+    const activeSpaces = await this.prisma.space.count({ where: { isActive: true, deletedAt: null } });
 
     return {
-      upcomingBookings: upcomingBookings.length, // total future
+      upcomingBookings: confirmedCount,
       totalHours: totalUpcomingHours,
       availableSpaces: activeSpaces,
-      recentBookings: upcomingBookings
+      recentBookings
     };
   }
 }

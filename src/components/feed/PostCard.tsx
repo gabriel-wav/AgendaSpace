@@ -3,6 +3,7 @@ import { Heart, MessageCircle, MoreHorizontal, Send } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { FeedPost, FeedComment } from './feed.types';
+import { getAbsoluteImageUrl } from '@/lib/api';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +36,7 @@ function timeAgo(iso: string): string {
 function MicroAvatar({ author, size = 24 }: { author: { name: string; avatarUrl?: string }; size?: number }) {
   return (
     <Avatar style={{ width: size, height: size }} className="shrink-0 ring-1 ring-border/60">
-      {author.avatarUrl && <AvatarImage src={author.avatarUrl} alt={author.name} />}
+      {author.avatarUrl && <AvatarImage src={getAbsoluteImageUrl(author.avatarUrl)} alt={author.name} />}
       <AvatarFallback
         style={{ fontSize: size * 0.38 }}
         className="bg-muted font-medium text-muted-foreground"
@@ -213,7 +214,7 @@ export function PostCard({ post, onLike, onComment, onDelete }: PostCardProps) {
       {/* ── Image — full width, slight rounding ────────────── */}
       <div className="overflow-hidden rounded-md bg-muted">
         <img
-          src={post.imageUrl}
+          src={getAbsoluteImageUrl(post.imageUrl)}
           alt={`Post de ${post.author.name} em ${post.space.name}`}
           className="w-full object-cover aspect-[4/3] transition-transform duration-500 group-hover:scale-[1.01]"
           loading="lazy"

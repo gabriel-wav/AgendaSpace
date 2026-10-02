@@ -17,16 +17,21 @@ export interface Booking {
   totalPrice: string;
   notes?: string | null;
   status: BookingStatus;
+  approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedAt?: string | null;
+  approvedById?: string | null;
   createdAt: string;
   updatedAt: string;
   space?: {
     id: string;
     name: string;
+    description?: string | null;
     pricePerHour: string;
     imageUrl?: string | null;
     capacity?: number;
     resources?: string[];
     createdById?: string;
+    createdBy?: { id: string; fullName: string } | null;
   };
   user?: {
     id: string;
@@ -34,13 +39,18 @@ export interface Booking {
     email: string;
   };
   payment?: {
+    id?: string;
     method: string;
     status: string;
+    amount?: string | number | null;
     simulationRef?: string | null;
+    createdAt?: string | null;
   } | null;
   contract?: {
+    id?: string;
     version: string;
-    acceptedText?: string;
+    acceptedText?: string | null;
+    createdAt?: string | null;
   } | null;
 }
 
@@ -52,7 +62,8 @@ export interface CreateBookingPayload {
 }
 
 export interface UpdateBookingStatusPayload {
-  status: BookingStatus;
+  status?: BookingStatus;
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
 export interface PayBookingPayload {

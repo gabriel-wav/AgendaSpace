@@ -3,6 +3,7 @@ import { ImagePlus, X, Loader2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
 
 interface NewPostInputProps {
   spaces: { id: string; name: string }[];
@@ -51,12 +52,33 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
       }
       setImagePreview(null);
       setExpanded(false);
+    } catch (error) {
+      // Error is caught here but form is NOT cleared, allowing retry
     } finally {
       setLoading(false);
     }
   };
 
   const canSubmit = content.trim().length > 0 && imageFile !== null && spaceId !== '';
+
+  if (spaces.length === 0) {
+    return (
+      <div className="rounded-md border border-border/60 bg-card px-4 py-6 text-center">
+        <p className="text-sm font-medium text-foreground mb-1">
+          Nenhum espaço disponível
+        </p>
+        <p className="text-xs text-muted-foreground mb-4">
+          Você precisa ter ou gerenciar um espaço ativo para publicar no feed.
+        </p>
+        <Link 
+          to="/my-spaces" 
+          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Ir para Meus Espaços
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div
