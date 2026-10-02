@@ -34,12 +34,23 @@ export class SpacesController {
   }
 
   /**
-   * Listagem pública de espaços disponíveis.
+   * Listagem pública de espaços disponíveis (Catálogo Explorar).
+   * Não filtra pelo usuário logado; exibe todos os espaços ativos.
    */
   @Get()
   async findAll(@Query('activeOnly') activeOnly?: string) {
     const isFiltered = activeOnly !== undefined ? activeOnly === 'true' : true;
     return this.spacesService.findAll(isFiltered);
+  }
+
+  /**
+   * Listagem de anúncios próprios do usuário autenticado (anfitrião).
+   * Obtém a identidade estritamente do token JWT autenticado.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('mine')
+  async findMine(@CurrentUser('id') userId: string) {
+    return this.spacesService.findByOwner(userId);
   }
 
   /**

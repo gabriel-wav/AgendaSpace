@@ -10,59 +10,39 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CalendarIcon, Search, Filter, Eye, Edit, X } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { fetchBookings, updateBookingStatus, Booking, BookingStatus } from '@/lib/bookings.api';
+import { formatBRL } from '@/lib/utils';
 
-interface Booking {
-  id: string;
-  user_id: string;
-  space_id: string;
-  start_datetime: string;
-  end_datetime: string;
-  total_price: number;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
-  notes?: string;
-  created_at: string;
-  profiles?: {
-    full_name: string;
-    email: string;
-  };
-  spaces?: {
-    name: string;
-    capacity: number;
-  };
+// Booking type is imported from bookings.api
+interface BookingsProps {
+  mode?: 'admin' | 'host';
 }
 
-export default function Bookings() {
+export default function Bookings({ mode = 'admin' }: BookingsProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<Date>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const { toast } = useToast();
+  const { user, isAdmin } = useAuth();
 
   useEffect(() => {
-    fetchBookings();
+    loadBookings();
   }, []);
 
-  const fetchBookings = async () => {
+  const loadBookings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select(`
-          *,
-          profiles:user_id (full_name, email),
-          spaces:space_id (name, capacity)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setBookings((data || []) as Booking[]);
+      const data = await fetchBookings(mode === 'host' ? 'host' : undefined);
+      setBookings(data || []);
     } catch (error: any) {
       toast({
         title: "Erro ao carregar reservas",
-        description: error.message,
+        description: error.message || "Não foi possível carregar as reservas.",
         variant: "destructive"
       });
     } finally {
@@ -70,32 +50,25 @@ export default function Bookings() {
     }
   };
 
-  const updateBookingStatus = async (bookingId: string, newStatus: string) => {
+  const handleUpdateStatus = async (bookingId: string, newStatus: BookingStatus) => {
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status: newStatus })
-        .eq('id', bookingId);
-
-      if (error) throw error;
-
+      await updateBookingStatus(bookingId, { status: newStatus });
       toast({
         title: "Status atualizado",
         description: "O status da reserva foi atualizado com sucesso."
       });
-
-      await fetchBookings();
+      await loadBookings();
     } catch (error: any) {
       toast({
         title: "Erro ao atualizar status",
-        description: error.message,
+        description: error.message || "Ocorreu um erro ao atualizar.",
         variant: "destructive"
       });
     }
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed':
         return 'default';
       case 'pending':
@@ -110,7 +83,7 @@ export default function Bookings() {
   };
 
   const getStatusLabel = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed':
         return 'Confirmada';
       case 'pending':
@@ -126,16 +99,18 @@ export default function Bookings() {
 
   const filteredBookings = bookings.filter(booking => {
     const matchesSearch = 
-      booking.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.spaces?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.profiles?.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      booking.user?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.space?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.user?.email?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || booking.status.toLowerCase() === statusFilter.toLowerCase();
 
     const matchesDate = !dateFilter || 
-      new Date(booking.start_datetime).toDateString() === dateFilter.toDateString();
+      new Date(booking.startDatetime).toDateString() === dateFilter.toDateString();
 
-    return matchesSearch && matchesStatus && matchesDate;
+    const matchesHost = mode === 'admin' || booking.space?.createdById === user?.id;
+
+    return matchesSearch && matchesStatus && matchesDate && matchesHost;
   });
 
   if (loading) {
@@ -156,9 +131,13 @@ export default function Bookings() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Gerenciar Reservas</h1>
+          <h1 className="text-3xl font-bold text-foreground">
+            {mode === 'admin' ? 'Gerenciar Todas as Reservas' : 'Reservas Recebidas'}
+          </h1>
           <p className="text-muted-foreground mt-1">
-            Visualize e gerencie todas as reservas da plataforma
+            {mode === 'admin' 
+              ? 'Visualize e gerencie todas as reservas da plataforma'
+              : 'Gerencie as reservas recebidas nos seus espaços'}
           </p>
         </div>
 
@@ -166,25 +145,25 @@ export default function Bookings() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{bookings.filter(b => b.status === 'pending').length}</div>
+              <div className="text-2xl font-bold">{bookings.filter(b => b.status.toLowerCase() === 'pending').length}</div>
               <p className="text-xs text-muted-foreground">Pendentes</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{bookings.filter(b => b.status === 'confirmed').length}</div>
+              <div className="text-2xl font-bold">{bookings.filter(b => b.status.toLowerCase() === 'confirmed').length}</div>
               <p className="text-xs text-muted-foreground">Confirmadas</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{bookings.filter(b => b.status === 'completed').length}</div>
+              <div className="text-2xl font-bold">{bookings.filter(b => b.status.toLowerCase() === 'completed').length}</div>
               <p className="text-xs text-muted-foreground">Concluídas</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{bookings.filter(b => b.status === 'cancelled').length}</div>
+              <div className="text-2xl font-bold">{bookings.filter(b => b.status.toLowerCase() === 'cancelled').length}</div>
               <p className="text-xs text-muted-foreground">Canceladas</p>
             </CardContent>
           </Card>
@@ -217,7 +196,7 @@ export default function Bookings() {
                   <SelectItem value="cancelled">Cancelada</SelectItem>
                 </SelectContent>
               </Select>
-              <Popover>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -230,11 +209,15 @@ export default function Bookings() {
                     {dateFilter ? format(dateFilter, "dd/MM/yyyy", { locale: ptBR }) : "Filtrar por data"}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
+                <PopoverContent className="w-auto p-0 z-50 shadow-xl" align="end">
                   <Calendar
                     mode="single"
                     selected={dateFilter}
-                    onSelect={setDateFilter}
+                    onSelect={(date) => {
+                      setDateFilter(date);
+                      setCalendarOpen(false);
+                    }}
+                    locale={ptBR}
                     className="p-3 pointer-events-auto"
                   />
                 </PopoverContent>
@@ -261,36 +244,36 @@ export default function Bookings() {
               <div className="space-y-4">
                 {filteredBookings.map((booking) => (
                   <div key={booking.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center gap-3">
-                          <h3 className="font-medium">{booking.spaces?.name}</h3>
+                          <h3 className="font-medium">{booking.space?.name}</h3>
                           <Badge variant={getStatusColor(booking.status)}>
                             {getStatusLabel(booking.status)}
                           </Badge>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground">
                           <div>
-                            <span className="font-medium">Usuário:</span> {booking.profiles?.full_name}
+                            <span className="font-medium">Usuário:</span> {booking.user?.fullName}
                           </div>
                           <div>
-                            <span className="font-medium">Email:</span> {booking.profiles?.email}
+                            <span className="font-medium">Email:</span> {booking.user?.email}
                           </div>
                           <div>
                             <span className="font-medium">Data:</span> {' '}
-                            {format(new Date(booking.start_datetime), "dd/MM/yyyy", { locale: ptBR })}
+                            {format(new Date(booking.startDatetime), "dd/MM/yyyy", { locale: ptBR })}
                           </div>
                           <div>
                             <span className="font-medium">Horário:</span> {' '}
-                            {format(new Date(booking.start_datetime), "HH:mm")} - {' '}
-                            {format(new Date(booking.end_datetime), "HH:mm")}
+                            {format(new Date(booking.startDatetime), "HH:mm")} - {' '}
+                            {format(new Date(booking.endDatetime), "HH:mm")}
                           </div>
                           <div>
-                            <span className="font-medium">Capacidade:</span> {booking.spaces?.capacity} pessoas
+                            <span className="font-medium">Capacidade:</span> {booking.space?.capacity || 'N/A'} pessoas
                           </div>
                           <div>
-                            <span className="font-medium">Valor:</span> R$ {booking.total_price.toFixed(2)}
+                            <span className="font-medium">Valor:</span> {formatBRL(booking.totalPrice)}
                           </div>
                         </div>
 
@@ -301,23 +284,30 @@ export default function Bookings() {
                         )}
                       </div>
 
-                      <div className="flex flex-col gap-2 ml-4">
-                        {booking.status === 'pending' && (
+                      <div className="flex sm:flex-col gap-2 flex-wrap sm:ml-4 w-full sm:w-auto">
+                        {booking.status.toLowerCase() === 'pending' && (
                           <>
                             <Button
                               size="sm"
+                              variant="default"
+                              onClick={() => handleUpdateStatus(booking.id, 'CONFIRMED')}
+                            >
+                              Confirmar (Manual)
+                            </Button>
+                            <Button
+                              size="sm"
                               variant="outline"
-                              onClick={() => updateBookingStatus(booking.id, 'cancelled')}
+                              onClick={() => handleUpdateStatus(booking.id, 'CANCELLED')}
                             >
                               Cancelar
                             </Button>
                           </>
                         )}
-                        {booking.status === 'confirmed' && (
+                        {booking.status.toLowerCase() === 'confirmed' && (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => updateBookingStatus(booking.id, 'completed')}
+                            onClick={() => handleUpdateStatus(booking.id, 'COMPLETED')}
                           >
                             Marcar como Realizada
                           </Button>
@@ -328,7 +318,7 @@ export default function Bookings() {
                           onClick={() => {
                             toast({
                               title: "Detalhes da Reserva",
-                              description: `Reserva de ${booking.profiles?.full_name} para ${booking.spaces?.name} em ${format(new Date(booking.start_datetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`
+                              description: `Reserva de ${booking.user?.fullName} para ${booking.space?.name} em ${format(new Date(booking.startDatetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`
                             });
                           }}
                           title="Ver detalhes"

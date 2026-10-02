@@ -11,7 +11,6 @@ datasource db {
 
 enum Role {
   ADMIN
-  TENANT
   USER
 }
 
@@ -20,6 +19,16 @@ enum BookingStatus {
   CONFIRMED
   COMPLETED
   CANCELLED
+}
+
+enum PaymentMethod {
+  PIX
+  CREDIT_CARD
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
 }
 
 model User {
@@ -72,8 +81,38 @@ model Booking {
 
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   space         Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  payment       Payment?
+  contract      ContractAcceptance?
 
   @@index([userId])
   @@index([spaceId])
   @@map("bookings")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  bookingId       String        @unique @map("booking_id")
+  method          PaymentMethod
+  status          PaymentStatus @default(SUCCESS)
+  amount          Decimal       @db.Decimal(10, 2)
+  simulationRef   String?       @map("simulation_ref")
+  idempotencyKey  String        @unique @map("idempotency_key")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model ContractAcceptance {
+  id              String        @id @default(uuid())
+  bookingId       String        @unique @map("booking_id")
+  version         String
+  acceptedText    String        @map("accepted_text") @db.Text
+  acceptedAt      DateTime      @default(now()) @map("accepted_at")
+  ipAddress       String?       @map("ip_address")
+
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("contract_acceptances")
 }

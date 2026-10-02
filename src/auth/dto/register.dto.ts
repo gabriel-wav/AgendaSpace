@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength, IsIn } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail({}, { message: 'E-mail inválido' })
@@ -13,9 +13,5 @@ export class RegisterDto {
   @IsString()
   @IsNotEmpty({ message: 'O nome completo é obrigatório' })
   fullName: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['ADMIN', 'TENANT', 'USER'], { message: 'Papel inválido (ADMIN, TENANT ou USER)' })
-  role?: 'ADMIN' | 'TENANT' | 'USER';
 }
+

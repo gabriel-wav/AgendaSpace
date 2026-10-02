@@ -28,19 +28,21 @@
     "src/spaces/**/*.ts",
     "src/bookings/**/*.ts",
     "src/feed/**/*.ts",
-    "src/prisma/**/*.ts"
+    "src/prisma/**/*.ts",
+    "src/users/**/*.ts",
+    "src/upload/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "src/components/**/*",
-    "src/hooks/**/*",
     "src/pages/**/*",
+    "src/hooks/**/*",
     "src/contexts/**/*",
     "src/lib/**/*",
-    "src/integrations/**/*",
-    "src/**/*.tsx",
+    "src/App.tsx",
     "src/main.tsx",
+    "src/index.css",
     "src/vite-env.d.ts"
   ]
 }

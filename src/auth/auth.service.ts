@@ -28,7 +28,7 @@ export class AuthService {
         email: dto.email,
         passwordHash,
         fullName: dto.fullName,
-        role: dto.role || 'USER',
+        role: 'USER', // Cadastro público sempre cria conta como USER (Modelo Airbnb)
       },
       select: {
         id: true,
@@ -40,12 +40,13 @@ export class AuthService {
       },
     });
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const access_token = this.jwtService.sign(payload);
 
     return {
       user,
       access_token,
+      accessToken: access_token,
     };
   }
 
@@ -64,7 +65,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas.');
     }
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const access_token = this.jwtService.sign(payload);
 
     const { passwordHash, ...userWithoutPassword } = user;
@@ -72,6 +73,7 @@ export class AuthService {
     return {
       user: userWithoutPassword,
       access_token,
+      accessToken: access_token,
     };
   }
 }

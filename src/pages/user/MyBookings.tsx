@@ -8,27 +8,14 @@ import { Calendar, Clock, MapPin, Eye, Edit, X, Plus, DollarSign } from 'lucide-
 import { useNavigate } from 'react-router-dom';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog } from '@/components/ui/dialog';
 import { PaymentDialog } from '@/components/booking/PaymentDialog';
+import { fetchMyBookings as apiFetchBookings, updateBookingStatus, Booking, BookingStatus } from '@/lib/bookings.api';
+import { formatBRL } from '@/lib/utils';
 
-interface Booking {
-  id: string;
-  space_id: string;
-  start_datetime: string;
-  end_datetime: string;
-  total_price: number;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
-  notes?: string;
-  created_at: string;
-  spaces?: {
-    name: string;
-    capacity: number;
-    resources: string[];
-  };
-}
+// Booking interface is now imported from bookings.api.ts
 
 export default function MyBookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -46,21 +33,12 @@ export default function MyBookings() {
 
   const fetchBookings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select(`
-          *,
-          spaces:space_id (name, capacity, resources)
-        `)
-        .eq('user_id', user?.id)
-        .order('start_datetime', { ascending: false });
-
-      if (error) throw error;
-      setBookings((data || []) as Booking[]);
+      const data = await apiFetchBookings();
+      setBookings(data || []);
     } catch (error: any) {
       toast({
         title: "Erro ao carregar reservas",
-        description: error.message,
+        description: error.message || "Não foi possível carregar as reservas.",
         variant: "destructive"
       });
     } finally {
@@ -72,12 +50,7 @@ export default function MyBookings() {
     if (!confirm('Tem certeza que deseja cancelar esta reserva?')) return;
 
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status: 'cancelled' })
-        .eq('id', bookingId);
-
-      if (error) throw error;
+      await updateBookingStatus(bookingId, { status: 'CANCELLED' });
 
       toast({
         title: "Reserva cancelada",
@@ -88,14 +61,14 @@ export default function MyBookings() {
     } catch (error: any) {
       toast({
         title: "Erro ao cancelar reserva",
-        description: error.message,
+        description: error.message || "Não foi possível cancelar.",
         variant: "destructive"
       });
     }
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed':
         return 'default';
       case 'pending':
@@ -110,7 +83,7 @@ export default function MyBookings() {
   };
 
   const getStatusLabel = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed':
         return 'Confirmada';
       case 'pending':
@@ -125,29 +98,30 @@ export default function MyBookings() {
   };
 
   const canCancelBooking = (booking: Booking) => {
-    const bookingStart = new Date(booking.start_datetime);
+    const bookingStart = new Date(booking.startDatetime);
     const now = new Date();
     const hoursUntilBooking = (bookingStart.getTime() - now.getTime()) / (1000 * 60 * 60);
     
-    return booking.status !== 'cancelled' && 
-           booking.status !== 'completed' && 
+    return booking.status.toLowerCase() !== 'cancelled' && 
+           booking.status.toLowerCase() !== 'completed' && 
            hoursUntilBooking > 2; // Can cancel up to 2 hours before
   };
 
   const categorizeBookings = () => {
     const upcoming = bookings.filter(booking => 
-      isFuture(new Date(booking.start_datetime)) && 
-      ['pending', 'confirmed'].includes(booking.status)
+      isFuture(new Date(booking.startDatetime)) && 
+      !isToday(new Date(booking.startDatetime)) &&
+      ['pending', 'confirmed'].includes(booking.status.toLowerCase())
     );
     
     const today = bookings.filter(booking => 
-      isToday(new Date(booking.start_datetime)) && 
-      ['pending', 'confirmed'].includes(booking.status)
+      isToday(new Date(booking.startDatetime)) && 
+      ['pending', 'confirmed'].includes(booking.status.toLowerCase())
     );
     
     const past = bookings.filter(booking => 
-      isPast(new Date(booking.end_datetime)) || 
-      ['completed', 'cancelled'].includes(booking.status)
+      isPast(new Date(booking.endDatetime)) || 
+      ['completed', 'cancelled'].includes(booking.status.toLowerCase())
     );
 
     return { upcoming, today, past };
@@ -156,40 +130,40 @@ export default function MyBookings() {
   const renderBookingCard = (booking: Booking) => (
     <Card key={booking.id} className="mb-4">
       <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h3 className="font-medium">{booking.spaces?.name}</h3>
+              <h3 className="font-medium text-foreground">{booking.space?.name}</h3>
               <Badge variant={getStatusColor(booking.status)}>
                 {getStatusLabel(booking.status)}
               </Badge>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
               <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                <span>{format(new Date(booking.start_datetime), "dd/MM/yyyy", { locale: ptBR })}</span>
+                <Calendar className="h-4 w-4 text-primary" />
+                <span>{format(new Date(booking.startDatetime), "dd/MM/yyyy", { locale: ptBR })}</span>
               </div>
               <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
+                <Clock className="h-4 w-4 text-primary" />
                 <span>
-                  {format(new Date(booking.start_datetime), "HH:mm")} - {' '}
-                  {format(new Date(booking.end_datetime), "HH:mm")}
+                  {format(new Date(booking.startDatetime), "HH:mm")} - {' '}
+                  {format(new Date(booking.endDatetime), "HH:mm")}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" />
-                <span>{booking.spaces?.capacity} pessoas</span>
+                <MapPin className="h-4 w-4 text-primary" />
+                <span>{booking.space?.capacity || 'N/A'} pessoas</span>
               </div>
               <div>
-                <span className="font-medium">R$ {booking.total_price.toFixed(2)}</span>
+                <span className="font-medium text-foreground">{formatBRL(booking.totalPrice)}</span>
               </div>
             </div>
 
-            {booking.spaces?.resources && booking.spaces.resources.length > 0 && (
+            {booking.space?.resources && booking.space.resources.length > 0 && (
               <div className="mb-3">
                 <div className="flex flex-wrap gap-1">
-                  {booking.spaces.resources.map((resource) => (
+                  {booking.space.resources.map((resource) => (
                     <Badge key={resource} variant="outline" className="text-xs">
                       {resource}
                     </Badge>
@@ -199,16 +173,16 @@ export default function MyBookings() {
             )}
 
             {booking.notes && (
-              <div className="text-sm border-l-2 border-muted pl-3 mt-2">
-                <span className="font-medium">Observações:</span> {booking.notes}
+              <div className="text-sm border-l-2 border-primary/40 pl-3 mt-2 text-muted-foreground">
+                <span className="font-medium text-foreground">Observações:</span> {booking.notes}
               </div>
             )}
           </div>
 
-          <div className="flex flex-col gap-2 ml-4">
-                        {booking.status === 'pending' && (
-              <Button size="sm" onClick={() => setPaymentBooking(booking)}>
-                 <DollarSign className="mr-2 h-4 w-4" />
+          <div className="flex sm:flex-col gap-2 flex-wrap sm:ml-4 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
+            {booking.status.toLowerCase() === 'pending' && (
+              <Button size="sm" onClick={() => setPaymentBooking(booking)} className="flex-1 sm:flex-none">
+                <DollarSign className="mr-1.5 h-4 w-4" />
                 Pagar para Confirmar
               </Button>
             )}
@@ -218,21 +192,23 @@ export default function MyBookings() {
               onClick={() => {
                 toast({
                   title: "Detalhes da Reserva",
-                  description: `${booking.spaces?.name} - ${format(new Date(booking.start_datetime), "dd/MM/yyyy HH:mm")}`,
+                  description: `${booking.space?.name} - ${format(new Date(booking.startDatetime), "dd/MM/yyyy HH:mm")}`,
                 });
               }}
+              className="flex-1 sm:flex-none"
             >
-              <Eye className="h-4 w-4" />
+              <Eye className="h-4 w-4 mr-1 sm:mr-0" />
+              <span className="sm:hidden text-xs">Ver</span>
             </Button>
             {canCancelBooking(booking) && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => cancelBooking(booking.id)}
-                className="text-destructive hover:text-destructive"
+                className="text-destructive hover:text-destructive flex-1 sm:flex-none"
               >
                 <X className="h-4 w-4 mr-1" />
-                <span>{booking.status === 'pending' ? 'Cancelar Pedido' : 'Cancelar Reserva'}</span>
+                <span>{booking.status.toLowerCase() === 'pending' ? 'Cancelar Pedido' : 'Cancelar'}</span>
               </Button>
             )}
           </div>
@@ -289,7 +265,7 @@ export default function MyBookings() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{bookings.filter(b => b.status === 'pending').length}</div>
+              <div className="text-2xl font-bold">{bookings.filter(b => b.status.toLowerCase() === 'pending').length}</div>
               <p className="text-xs text-muted-foreground">Pendentes</p>
             </CardContent>
           </Card>

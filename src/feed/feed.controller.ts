@@ -8,6 +8,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Query,
+  Optional,
 } from '@nestjs/common';
 import { FeedService } from './feed.service';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -33,12 +35,31 @@ export class FeedController {
   }
 
   /**
+   * Retorna o feed global
+   */
+  @Get('posts')
+  async getGlobalPosts(
+    @Query('limit') limitStr?: string,
+    @Query('cursor') cursor?: string,
+    @Optional() @CurrentUser('id') userId?: string, // Opcional, para likedByMe se o Guard fosse opcional, mas JwtAuthGuard exige logado.
+  ) {
+    const limit = limitStr ? parseInt(limitStr, 10) : 10;
+    // O JwtAuthGuard está no escopo da classe, então userId sempre existirá
+    return this.feedService.getGlobalPosts(limit, cursor, userId);
+  }
+
+  /**
    * Retorna o feed de publicações de um espaço específico.
-   * Retorna os posts com likesCount e os últimos 3 comentários.
    */
   @Get('spaces/:spaceId')
-  async getPostsBySpace(@Param('spaceId') spaceId: string) {
-    return this.feedService.getPostsBySpace(spaceId);
+  async getPostsBySpace(
+    @Param('spaceId') spaceId: string,
+    @Query('limit') limitStr?: string,
+    @Query('cursor') cursor?: string,
+    @Optional() @CurrentUser('id') userId?: string,
+  ) {
+    const limit = limitStr ? parseInt(limitStr, 10) : 10;
+    return this.feedService.getPostsBySpace(spaceId, limit, cursor, userId);
   }
 
   /**

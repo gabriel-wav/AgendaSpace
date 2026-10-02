@@ -24,7 +24,9 @@ export default function UserSpaces() {
   const [showBookingForm, setShowBookingForm] = useState(false);
   const { toast } = useToast();
 
-  const availableResources = ['wifi', 'projetor', 'quadro-branco', 'ar-condicionado', 'som', 'palco', 'computadores'];
+  const [availableResources, setAvailableResources] = useState<string[]>([]);
+  const [maxCapacity, setMaxCapacity] = useState(100);
+  const [maxPrice, setMaxPrice] = useState(500);
 
   useEffect(() => {
     loadSpaces();
@@ -33,7 +35,33 @@ export default function UserSpaces() {
   const loadSpaces = async () => {
     try {
       const data = await apiFetchSpaces(true);
-      setSpaces(data || []);
+      const loadedSpaces = data || [];
+      setSpaces(loadedSpaces);
+
+      if (loadedSpaces.length > 0) {
+        let currentMaxCapacity = 1;
+        let currentMaxPrice = 0;
+        const resourcesSet = new Set<string>();
+
+        loadedSpaces.forEach((s) => {
+          if (s.capacity > currentMaxCapacity) currentMaxCapacity = s.capacity;
+          const p = parseFloat(String(s.pricePerHour || (s as any).price_per_hour)) || 0;
+          if (p > currentMaxPrice) currentMaxPrice = p;
+          if (Array.isArray(s.resources)) {
+            s.resources.forEach((r) => resourcesSet.add(r));
+          }
+        });
+
+        // Add 10% margin to max price, ceil it
+        const finalMaxPrice = Math.ceil(currentMaxPrice * 1.1) || 500;
+        const finalMaxCapacity = currentMaxCapacity > 1 ? currentMaxCapacity : 100;
+
+        setMaxCapacity(finalMaxCapacity);
+        setMaxPrice(finalMaxPrice);
+        setCapacityRange([1, finalMaxCapacity]);
+        setPriceRange([0, finalMaxPrice]);
+        setAvailableResources(Array.from(resourcesSet).sort());
+      }
     } catch (error: any) {
       toast({
         title: "Erro ao carregar espaços",
@@ -91,7 +119,7 @@ export default function UserSpaces() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <div className="flex-1">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -106,6 +134,7 @@ export default function UserSpaces() {
                 <Button
                   variant="outline"
                   onClick={() => setShowFilters(!showFilters)}
+                  className="w-full sm:w-auto"
                 >
                   <Filter className="mr-2 h-4 w-4" />
                   Filtros
@@ -120,14 +149,14 @@ export default function UserSpaces() {
                       <Slider
                         value={capacityRange}
                         onValueChange={setCapacityRange}
-                        max={100}
+                        max={maxCapacity}
                         min={1}
                         step={1}
                         className="mb-2"
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>{capacityRange[0]} pessoas</span>
-                        <span>{capacityRange[1]} pessoas</span>
+                        <span>{capacityRange[1]}{capacityRange[1] === maxCapacity ? '+' : ''} pessoas</span>
                       </div>
                     </div>
                   </div>
@@ -138,14 +167,14 @@ export default function UserSpaces() {
                       <Slider
                         value={priceRange}
                         onValueChange={setPriceRange}
-                        max={500}
+                        max={maxPrice}
                         min={0}
                         step={10}
                         className="mb-2"
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>R$ {priceRange[0]}</span>
-                        <span>R$ {priceRange[1]}</span>
+                        <span>R$ {priceRange[1]}{priceRange[1] === maxPrice ? '+' : ''}</span>
                       </div>
                     </div>
                   </div>
@@ -272,8 +301,8 @@ export default function UserSpaces() {
               </p>
               <Button variant="outline" onClick={() => {
                 setSearchTerm('');
-                setCapacityRange([1, 100]);
-                setPriceRange([0, 500]);
+                setCapacityRange([1, maxCapacity]);
+                setPriceRange([0, maxPrice]);
                 setResourceFilter('all');
               }}>
                 Limpar Filtros
@@ -286,16 +315,16 @@ export default function UserSpaces() {
         <Dialog open={!!selectedSpace && !showBookingForm} onOpenChange={(open) => {
           if (!open) setSelectedSpace(null);
         }}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl">
             <DialogHeader>
-              <DialogTitle>{selectedSpace?.name}</DialogTitle>
+              <DialogTitle className="text-xl">{selectedSpace?.name}</DialogTitle>
               <DialogDescription>
                 Detalhes completos do espaço
               </DialogDescription>
             </DialogHeader>
             {selectedSpace && (
               <div className="space-y-4">
-                <div className="h-64 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg flex items-center justify-center">
+                <div className="h-56 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg flex items-center justify-center overflow-hidden">
                   {(selectedSpace.imageUrl || (selectedSpace as any).image_url) ? (
                     <img
                       src={selectedSpace.imageUrl || (selectedSpace as any).image_url}
@@ -307,25 +336,25 @@ export default function UserSpaces() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <h4 className="font-medium mb-2">Informações Gerais</h4>
+                    <h4 className="font-medium mb-2 text-sm text-foreground">Informações Gerais</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Capacidade:</span>
-                        <span>{selectedSpace.capacity} pessoas</span>
+                        <span className="font-medium">{selectedSpace.capacity} pessoas</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Preço/hora:</span>
-                        <span className="font-medium">
-                          R$ {parseFloat(String(selectedSpace.pricePerHour || (selectedSpace as any).price_per_hour)) || 0}
+                        <span className="text-muted-foreground">Preço por hora:</span>
+                        <span className="font-medium text-primary">
+                          R$ {parseFloat(String(selectedSpace.pricePerHour || (selectedSpace as any).price_per_hour)) || 0}/h
                         </span>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h4 className="font-medium mb-2">Recursos Disponíveis</h4>
+                    <h4 className="font-medium mb-2 text-sm text-foreground">Recursos Disponíveis</h4>
                     <div className="flex flex-wrap gap-1">
                       {(Array.isArray(selectedSpace.resources) ? selectedSpace.resources : []).map((resource) => (
                         <Badge key={resource} variant="outline" className="text-xs">
@@ -338,19 +367,19 @@ export default function UserSpaces() {
 
                 {selectedSpace.description && (
                   <div>
-                    <h4 className="font-medium mb-2">Descrição</h4>
+                    <h4 className="font-medium mb-1 text-sm text-foreground">Descrição</h4>
                     <p className="text-sm text-muted-foreground">
                       {selectedSpace.description}
                     </p>
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setSelectedSpace(null)} className="flex-1">
+                <div className="flex flex-col-reverse sm:flex-row gap-2 pt-4">
+                  <Button variant="outline" onClick={() => setSelectedSpace(null)} className="w-full sm:flex-1">
                     Fechar
                   </Button>
                   <Button 
-                    className="flex-1"
+                    className="w-full sm:flex-1"
                     onClick={() => setShowBookingForm(true)}
                   >
                     Reservar Agora
@@ -362,24 +391,33 @@ export default function UserSpaces() {
         </Dialog>
 
         {/* Booking Form Modal */}
-        <Dialog open={showBookingForm} onOpenChange={setShowBookingForm}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={showBookingForm} onOpenChange={(open) => {
+          setShowBookingForm(open);
+          if (!open) setSelectedSpace(null);
+        }}>
+          <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl">
             {selectedSpace && (
-              <BookingForm
-                space={{
-                  id: selectedSpace.id,
-                  name: selectedSpace.name,
-                  description: selectedSpace.description || '',
-                  capacity: selectedSpace.capacity,
-                  price_per_hour: parseFloat(String(selectedSpace.pricePerHour || (selectedSpace as any).price_per_hour)) || 0,
-                  resources: Array.isArray(selectedSpace.resources) ? selectedSpace.resources : [],
-                }}
-                onSuccess={() => {
-                  setShowBookingForm(false);
-                  setSelectedSpace(null);
-                }}
-                onCancel={() => setShowBookingForm(false)}
-              />
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-xl flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" />
+                    Reservar {selectedSpace.name}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Escolha a data e o período desejado para solicitar a sua reserva.
+                  </DialogDescription>
+                </DialogHeader>
+                <BookingForm
+                  space={selectedSpace}
+                  onSuccess={() => {
+                    setShowBookingForm(false);
+                    setSelectedSpace(null);
+                  }}
+                  onCancel={() => {
+                    setShowBookingForm(false);
+                  }}
+                />
+              </>
             )}
           </DialogContent>
         </Dialog>

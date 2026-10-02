@@ -12,11 +12,20 @@ import { PrismaModule } from '../prisma/prisma.module';
     PrismaModule,
     PassportModule,
     JwtModule.registerAsync({
-      useFactory: () => ({
-        secret: process.env.JWT_SECRET || 'supersecretkey',
-        signOptions: { expiresIn: '7d' },
-      }),
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+          throw new Error(
+            '[AuthModule] Variável de ambiente obrigatória "JWT_SECRET" não foi definida.',
+          );
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: '7d' },
+        };
+      },
     }),
+
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard],

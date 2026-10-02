@@ -7,16 +7,13 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   /** Require ADMIN role to access */
   requireAdmin?: boolean;
-  /** Require TENANT or ADMIN role to access */
-  requireTenant?: boolean;
 }
 
 export function ProtectedRoute({
   children,
   requireAdmin = false,
-  requireTenant = false,
 }: ProtectedRouteProps) {
-  const { user, loading, isAdmin, isTenant } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const location = useLocation();
 
   // Waiting for token hydration on first load
@@ -35,11 +32,6 @@ export function ProtectedRoute({
 
   // Route requires ADMIN role
   if (requireAdmin && !isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  // Route requires TENANT or ADMIN role
-  if (requireTenant && !isTenant && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -14,7 +14,7 @@ function initials(name: string) {
 }
 
 export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
-  const { profile } = useAuth();
+  const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [content, setContent] = useState('');
   const [spaceId, setSpaceId] = useState(spaces[0]?.id ?? '');
@@ -32,6 +32,9 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
 
   const handleRemoveImage = () => {
     setImageFile(null);
+    if (imagePreview && imagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreview);
+    }
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -43,6 +46,9 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
       await onSubmit({ spaceId, content: content.trim(), imageFile });
       setContent('');
       setImageFile(null);
+      if (imagePreview && imagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview);
+      }
       setImagePreview(null);
       setExpanded(false);
     } finally {
@@ -62,9 +68,9 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
       {/* Collapsed — trigger row */}
       <div className="flex items-center gap-3">
         <Avatar className="h-7 w-7 shrink-0 ring-1 ring-border/60">
-          {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={profile.full_name} />}
+          {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.fullName} />}
           <AvatarFallback className="bg-muted text-[11px] font-medium text-muted-foreground">
-            {profile?.full_name ? initials(profile.full_name) : 'U'}
+            {user?.fullName ? initials(user.fullName) : 'U'}
           </AvatarFallback>
         </Avatar>
 
@@ -118,7 +124,7 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
               )}
             >
               <ImagePlus className="h-5 w-5" strokeWidth={1.5} />
-              <span className="text-xs">Clique para adicionar uma foto</span>
+              <span className="text-xs">Clique para adicionar uma foto (Máx 5MB)</span>
             </button>
           )}
 

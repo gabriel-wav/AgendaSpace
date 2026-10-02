@@ -54,15 +54,106 @@ export class FeedService {
     });
   }
 
+  private async enrichPosts(posts: any[], currentUserId?: string) {
+    if (!posts || posts.length === 0) return [];
+
+    const spaceIds = [...new Set(posts.map(p => p.spaceId))];
+    const authorIds = [...new Set(posts.map(p => p.authorId))];
+
+    // Get comments' authorIds
+    posts.forEach(p => {
+      if (p.recentComments) {
+        p.recentComments.forEach(c => authorIds.push(c.authorId));
+      }
+    });
+
+    const uniqueAuthorIds = [...new Set(authorIds)];
+
+    const [spaces, users] = await Promise.all([
+      this.prisma.space.findMany({
+        where: { id: { in: spaceIds } },
+        select: { id: true, name: true }
+      }),
+      this.prisma.user.findMany({
+        where: { id: { in: uniqueAuthorIds } },
+        select: { id: true, fullName: true, avatarUrl: true }
+      })
+    ]);
+
+    const spaceMap = new Map(spaces.map(s => [s.id, s]));
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    // Para likedByMe, precisamos buscar no Mongo se o currentUserId curtiu
+    let likedPostIds = new Set<string>();
+    if (currentUserId) {
+      const postIds = posts.map(p => p._id);
+      const myLikes = await this.likeModel.find({
+        authorId: currentUserId,
+        postId: { $in: postIds }
+      }).select('postId');
+      myLikes.forEach(l => likedPostIds.add(l.postId.toString()));
+    }
+
+    // Buscando total de comentários de forma agilizada (agrupando)
+    const postIds = posts.map(p => p._id);
+    const commentCounts = await this.commentModel.aggregate([
+      { $match: { postId: { $in: postIds } } },
+      { $group: { _id: '$postId', count: { $sum: 1 } } }
+    ]);
+    const commentCountMap = new Map(commentCounts.map(c => [c._id.toString(), c.count]));
+
+    return posts.map(post => {
+      const author = userMap.get(post.authorId) || { id: post.authorId, fullName: 'Desconhecido', avatarUrl: null };
+      const space = spaceMap.get(post.spaceId) || { id: post.spaceId, name: 'Desconhecido' };
+      
+      const mappedComments = (post.recentComments || []).map(c => {
+        const cAuthor = userMap.get(c.authorId) || { id: c.authorId, fullName: 'Desconhecido', avatarUrl: null };
+        return {
+          id: c._id.toString(),
+          content: c.content,
+          createdAt: c.createdAt,
+          author: {
+            id: cAuthor.id,
+            name: cAuthor.fullName,
+            avatarUrl: cAuthor.avatarUrl
+          }
+        };
+      });
+
+      return {
+        id: post._id.toString(),
+        content: post.content,
+        imageUrl: post.imageUrl,
+        createdAt: post.createdAt,
+        likesCount: post.likesCount || 0,
+        likedByMe: likedPostIds.has(post._id.toString()),
+        totalComments: commentCountMap.get(post._id.toString()) || 0,
+        author: {
+          id: author.id,
+          name: author.fullName,
+          avatarUrl: author.avatarUrl
+        },
+        space: {
+          id: space.id,
+          name: space.name
+        },
+        recentComments: mappedComments
+      };
+    });
+  }
+
   /**
-   * Retorna todas as publicações de um espaço com agregação de alta performance no MongoDB:
-   * - Total de curtidas (likesCount)
-   * - Os últimos 3 comentários ordenados do mais recente para o mais antigo (recentComments)
+   * Retorna todas as publicações de um espaço com agregação de alta performance no MongoDB
    */
-  async getPostsBySpace(spaceId: string) {
-    return this.postModel.aggregate([
+  async getPostsBySpace(spaceId: string, limit: number = 10, cursor?: string, currentUserId?: string) {
+    const match: any = { spaceId };
+    if (cursor) {
+      match._id = { $lt: new Types.ObjectId(cursor) };
+    }
+
+    const posts = await this.postModel.aggregate([
       {
-        $match: { spaceId },
+        $match: match,
       },
       {
         $sort: { createdAt: -1 },
@@ -108,7 +199,62 @@ export class FeedService {
           recentComments: 1,
         },
       },
+      {
+        $limit: limit,
+      },
     ]);
+
+    return this.enrichPosts(posts, currentUserId);
+  }
+
+  /**
+   * Retorna o feed global paginado.
+   */
+  async getGlobalPosts(limit: number = 10, cursor?: string, currentUserId?: string) {
+    const match: any = {};
+    if (cursor) {
+      match._id = { $lt: new Types.ObjectId(cursor) };
+    }
+
+    const posts = await this.postModel.aggregate([
+      { $match: match },
+      { $sort: { _id: -1 } },
+      {
+        $lookup: {
+          from: 'likes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      {
+        $lookup: {
+          from: 'comments',
+          let: { currentPostId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$postId', '$$currentPostId'] } } },
+            { $sort: { _id: -1 } },
+            { $limit: 3 },
+          ],
+          as: 'recentComments',
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          spaceId: 1,
+          authorId: 1,
+          imageUrl: 1,
+          content: 1,
+          createdAt: 1,
+          likesCount: { $size: '$likes' },
+          recentComments: 1,
+        },
+      },
+      { $limit: limit },
+    ]);
+
+    return this.enrichPosts(posts, currentUserId);
   }
 
   /**
@@ -208,7 +354,7 @@ export class FeedService {
 
     if (!isAdmin && !isAuthor && !isSpaceOwner) {
       throw new ForbiddenException(
-        'Você não tem permissão para excluir esta publicação. Apenas o autor, o administrador ou o locatário/dono do espaço podem realizar esta ação.',
+        'Você não tem permissão para excluir esta publicação. Apenas o autor, o administrador ou o anfitrião/dono do espaço podem realizar esta ação.',
       );
     }
 
@@ -264,7 +410,7 @@ export class FeedService {
 
     if (!isAdmin && !isAuthor && !isSpaceOwner) {
       throw new ForbiddenException(
-        'Você não tem permissão para excluir este comentário. Apenas o autor, o administrador ou o locatário/dono do espaço podem realizar esta ação.',
+        'Você não tem permissão para excluir este comentário. Apenas o autor, o administrador ou o anfitrião/dono do espaço podem realizar esta ação.',
       );
     }
 

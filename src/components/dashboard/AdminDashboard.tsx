@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Building2, Calendar, DollarSign, Users, Plus, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
-import { fetchSpaces } from '@/lib/spaces.api';
-import { fetchBookings } from '@/lib/bookings.api';
+import { fetchAdminStats } from '@/lib/dashboard.api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -25,48 +24,16 @@ export function AdminDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [spacesData, bookingsData] = await Promise.all([
-          fetchSpaces(false).catch(() => []),
-          fetchBookings().catch(() => []),
-        ]);
-
-        const todayStr = new Date().toDateString();
-        const todayBookingsCount = bookingsData.filter((b) => {
-          const dt = new Date(b.startDatetime || (b as any).start_datetime);
-          return dt.toDateString() === todayStr;
-        }).length;
-
-        const currentMonth = new Date().getMonth();
-        const currentYear = new Date().getFullYear();
-        const monthlyRevenue = bookingsData.reduce((sum, b) => {
-          const dt = new Date(b.startDatetime || (b as any).start_datetime);
-          const isThisMonth = dt.getMonth() === currentMonth && dt.getFullYear() === currentYear;
-          const isConfirmed = String(b.status).toUpperCase() === 'CONFIRMED';
-          if (isThisMonth && isConfirmed) {
-            return sum + (parseFloat(String(b.totalPrice || (b as any).total_price)) || 0);
-          }
-          return sum;
-        }, 0);
-
-        // Sort bookings by creation date descending
-        const sorted = [...bookingsData].sort((a, b) => {
-          const tA = new Date(a.createdAt || (a as any).created_at).getTime();
-          const tB = new Date(b.createdAt || (b as any).created_at).getTime();
-          return tB - tA;
-        });
-
-        // Set unique users
-        const uniqueUserIds = new Set(bookingsData.map((b) => b.userId || (b as any).user_id));
-        if (spacesData.length > 0) uniqueUserIds.add('owner');
+        const data = await fetchAdminStats();
 
         setStats({
-          totalSpaces: spacesData.filter((s) => s.isActive).length,
-          todayBookings: todayBookingsCount,
-          monthlyRevenue: Math.round(monthlyRevenue),
-          activeUsers: Math.max(uniqueUserIds.size, 1),
+          totalSpaces: data.totalSpaces,
+          todayBookings: data.todayBookings,
+          monthlyRevenue: Number(data.monthlyRevenue) || 0,
+          activeUsers: data.activeUsers,
         });
 
-        setRecentBookings(sorted.slice(0, 5));
+        setRecentBookings(data.recentBookings || []);
       } catch (error: any) {
         toast({
           title: "Erro ao carregar dados",
@@ -142,12 +109,12 @@ export function AdminDashboard() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Receita Mensal</CardTitle>
+                <CardTitle className="text-sm font-medium">Receita Mensal (Simulada)</CardTitle>
                 <DollarSign className="h-4 w-4 text-primary" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">R$ {stats.monthlyRevenue.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Reservas confirmadas</p>
+                <div className="text-2xl font-bold">R$ {stats.monthlyRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <p className="text-xs text-muted-foreground">Reservas pagas via PIX/Cartão</p>
               </CardContent>
             </Card>
 

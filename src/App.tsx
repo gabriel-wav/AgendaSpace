@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
@@ -19,6 +19,8 @@ import AdminUsers from "./pages/admin/Users";
 import AdminReports from "./pages/admin/Reports";
 import UserSpaces from "./pages/user/Spaces";
 import UserMyBookings from "./pages/user/MyBookings";
+import HostMySpaces from "./pages/host/MySpaces";
+import HostReceivedBookings from "./pages/host/ReceivedBookings";
 import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient({
@@ -63,6 +65,16 @@ const App = () => (
                 <UserMyBookings />
               </ProtectedRoute>
             } />
+            <Route path="/my-spaces" element={
+              <ProtectedRoute>
+                <HostMySpaces />
+              </ProtectedRoute>
+            } />
+            <Route path="/host/bookings" element={
+              <ProtectedRoute>
+                <HostReceivedBookings />
+              </ProtectedRoute>
+            } />
             <Route path="/feed" element={
               <ProtectedRoute>
                 <FeedPage />
@@ -74,14 +86,19 @@ const App = () => (
               </ProtectedRoute>
             } />
 
-            {/* Protected — ADMIN or TENANT */}
+            {/* Legacy redirects */}
+            <Route path="/host/spaces" element={<Navigate to="/my-spaces" replace />} />
+            <Route path="/user/spaces" element={<Navigate to="/spaces" replace />} />
+            <Route path="/user/my-bookings" element={<Navigate to="/my-bookings" replace />} />
+
+            {/* Protected — ADMIN */}
             <Route path="/admin/spaces" element={
-              <ProtectedRoute requireTenant>
+              <ProtectedRoute requireAdmin>
                 <AdminSpaces />
               </ProtectedRoute>
             } />
             <Route path="/admin/bookings" element={
-              <ProtectedRoute requireTenant>
+              <ProtectedRoute requireAdmin>
                 <AdminBookings />
               </ProtectedRoute>
             } />

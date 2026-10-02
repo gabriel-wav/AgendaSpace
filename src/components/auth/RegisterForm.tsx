@@ -81,52 +81,12 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-/** Seletor de tipo de conta — pills sem dropdown */
-function RoleSelector({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const options = [
-    { value: 'user',   label: 'Usuário',     description: 'Reserva espaços' },
-    { value: 'tenant', label: 'Locatário',   description: 'Gerencia espaços' },
-  ];
 
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            'rounded-md px-3 py-2.5 text-left transition-all duration-150',
-            'ring-1',
-            value === opt.value
-              ? 'bg-foreground text-background ring-foreground'
-              : 'bg-zinc-100 dark:bg-zinc-900 text-foreground ring-transparent hover:ring-border',
-          )}
-        >
-          <span className="block text-xs font-semibold">{opt.label}</span>
-          <span className={cn(
-            'block text-[11px] mt-0.5',
-            value === opt.value ? 'text-background/60' : 'text-muted-foreground'
-          )}>
-            {opt.description}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export function RegisterForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [role, setRole] = useState('user');
   const { signUp } = useAuth();
   const navigate = useNavigate();
 
@@ -141,7 +101,7 @@ export function RegisterForm() {
 
   const onSubmit = async (data: RegisterFormData) => {
     setLoading(true);
-    const res = await signUp(data.email, data.password, data.fullName, role);
+    const res = await signUp(data.email, data.password, data.fullName);
     setLoading(false);
 
     if (res.error) {
@@ -199,10 +159,6 @@ export function RegisterForm() {
           />
         </Field>
 
-        {/* Account type — pill selector */}
-        <Field id="role" label="Tipo de conta" error={undefined}>
-          <RoleSelector value={role} onChange={setRole} />
-        </Field>
 
         {/* Password */}
         <Field id="password" label="Senha" error={errors.password?.message}>

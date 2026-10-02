@@ -12,21 +12,16 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
-interface UseFileUploadOptions {
-  /** Bucket lógico — mapeado no backend para a pasta de destino */
-  bucket: 'spaces' | 'avatars' | 'feed';
-}
-
 interface UseFileUploadReturn {
-  uploadFile: (file: File) => Promise<string | null>;
+  uploadFile: (file: File, bucket: 'spaces' | 'avatars' | 'feed') => Promise<string | null>;
   uploading: boolean;
 }
 
-export function useFileUpload({ bucket }: UseFileUploadOptions): UseFileUploadReturn {
+export function useFileUpload(): UseFileUploadReturn {
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
 
-  const uploadFile = async (file: File): Promise<string | null> => {
+  const uploadFile = async (file: File, bucket: 'spaces' | 'avatars' | 'feed'): Promise<string | null> => {
     setUploading(true);
 
     try {

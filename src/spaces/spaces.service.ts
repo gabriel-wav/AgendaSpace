@@ -63,6 +63,25 @@ export class SpacesService {
   }
 
   /**
+   * Lista todos os espaços pertencentes a um anfitrião específico (ativos e inativos).
+   */
+  async findByOwner(userId: string) {
+    return this.prisma.space.findMany({
+      where: { createdById: userId },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
    * Busca um espaço específico pelo ID (UUID)
    */
   async findOne(id: string) {

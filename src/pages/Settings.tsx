@@ -11,23 +11,23 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Lock, Bell, Shield, Save, Camera } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { FileUpload } from '@/components/ui/file-upload';
 import { useFileUpload } from '@/hooks/useFileUpload';
 
 export default function Settings() {
-  const { user, profile } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const { uploadFile, uploading } = useFileUpload({ bucket: 'avatars' });
+  const { uploadFile, uploading } = useFileUpload();
   const [profileData, setProfileData] = useState({
-    full_name: profile?.full_name || '',
-    email: profile?.email || '',
+    fullName: user?.fullName || '',
+    email: user?.email || '',
     bio: '',
     phone: '',
-    avatar_url: profile?.avatar_url || ''
+    avatarUrl: user?.avatarUrl || ''
   });
 
   const [notifications, setNotifications] = useState({
@@ -44,42 +44,40 @@ export default function Settings() {
   });
 
   useEffect(() => {
-    if (profile) {
+    if (user) {
       setProfileData({
-        full_name: profile.full_name || '',
-        email: profile.email || '',
+        fullName: user.fullName || '',
+        email: user.email || '',
         bio: '',
         phone: '',
-        avatar_url: profile.avatar_url || ''
+        avatarUrl: user.avatarUrl || ''
       });
     }
-  }, [profile]);
+  }, [user]);
 
   const handleSaveProfile = async () => {
     setLoading(true);
     try {
       let updatedData: any = {
-        full_name: profileData.full_name,
+        fullName: profileData.fullName,
         email: profileData.email
       };
 
-      // Se há um novo avatar para upload
       if (avatarFile && user?.id) {
-        const avatarUrl = await uploadFile(avatarFile, user.id);
+        const avatarUrl = await uploadFile(avatarFile, 'avatars');
         if (avatarUrl) {
-          updatedData.avatar_url = avatarUrl;
-          setProfileData(prev => ({ ...prev, avatar_url: avatarUrl }));
+          updatedData.avatarUrl = avatarUrl;
+          setProfileData(prev => ({ ...prev, avatarUrl }));
         }
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update(updatedData)
-        .eq('id', user?.id);
-
-      if (error) throw error;
+      await api.patch(`/profiles/${user?.id}`, updatedData);
 
       setAvatarFile(null);
+
+      // Refresh the user context so header avatar/name updates immediately
+      await refreshUser();
+
       toast({
         title: "Perfil atualizado",
         description: "Suas informações foram salvas com sucesso."
@@ -134,14 +132,14 @@ export default function Settings() {
                 <div className="space-y-4">
                   <div className="flex items-center space-x-4">
                     <Avatar className="h-20 w-20">
-                      {(profileData.avatar_url || avatarFile) && (
+                      {(profileData.avatarUrl || avatarFile) && (
                         <AvatarImage 
-                          src={avatarFile ? URL.createObjectURL(avatarFile) : profileData.avatar_url} 
+                          src={avatarFile ? URL.createObjectURL(avatarFile) : profileData.avatarUrl} 
                           alt="Avatar"
                         />
                       )}
                       <AvatarFallback className="bg-primary text-primary-foreground text-lg">
-                        {profileData.full_name ? getInitials(profileData.full_name) : 'U'}
+                        {profileData.fullName ? getInitials(profileData.fullName) : 'U'}
                       </AvatarFallback>
                     </Avatar>
                     <div className="space-y-2">
@@ -170,8 +168,8 @@ export default function Settings() {
                     <Label htmlFor="full_name">Nome Completo</Label>
                     <Input
                       id="full_name"
-                      value={profileData.full_name}
-                      onChange={(e) => setProfileData({ ...profileData, full_name: e.target.value })}
+                      value={profileData.fullName}
+                      onChange={(e) => setProfileData({ ...profileData, fullName: e.target.value })}
                     />
                   </div>
                   <div className="space-y-2">
@@ -184,32 +182,36 @@ export default function Settings() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Telefone</Label>
+                    <Label htmlFor="phone">Telefone (Em breve)</Label>
                     <Input
                       id="phone"
                       value={profileData.phone}
                       onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                       placeholder="(11) 99999-9999"
+                      disabled
+                      title="Campo não implementado no banco de dados atual."
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Tipo de Conta</Label>
                     <div className="px-3 py-2 bg-muted rounded-md">
                       <span className="text-sm font-medium">
-                        {profile?.role === 'admin' ? 'Administrador' : 'Usuário'}
+                        {user?.role === 'ADMIN' ? 'Administrador' : 'Usuário'}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="bio">Biografia</Label>
+                  <Label htmlFor="bio">Biografia (Em breve)</Label>
                   <Textarea
                     id="bio"
                     value={profileData.bio}
                     onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                     placeholder="Conte um pouco sobre você..."
                     rows={3}
+                    disabled
+                    title="Campo não implementado no banco de dados atual."
                   />
                 </div>
 
@@ -226,79 +228,25 @@ export default function Settings() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Bell className="mr-2 h-5 w-5" />
-                  Preferências de Notificação
+                  Preferências de Notificação (Não Disponível)
                 </CardTitle>
                 <CardDescription>
-                  Configure como você gostaria de receber notificações
+                  Serviço de envio de emails e push notifications ainda não está integrado.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between opacity-60">
                     <div className="space-y-0.5">
                       <Label>Notificações de Reserva</Label>
                       <p className="text-sm text-muted-foreground">
-                        Receba emails sobre suas reservas (confirmações, lembretes)
+                        Receba emails sobre suas reservas
                       </p>
                     </div>
-                    <Switch
-                      checked={notifications.email_bookings}
-                      onCheckedChange={(checked) => 
-                        setNotifications({ ...notifications, email_bookings: checked })
-                      }
-                    />
+                    <Switch disabled checked={false} />
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Lembretes de Reserva</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Receba lembretes por email antes das suas reservas
-                      </p>
-                    </div>
-                    <Switch
-                      checked={notifications.email_reminders}
-                      onCheckedChange={(checked) => 
-                        setNotifications({ ...notifications, email_reminders: checked })
-                      }
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Notificações Push</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Receba notificações push no seu navegador
-                      </p>
-                    </div>
-                    <Switch
-                      checked={notifications.push_notifications}
-                      onCheckedChange={(checked) => 
-                        setNotifications({ ...notifications, push_notifications: checked })
-                      }
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Emails de Marketing</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Receba novidades e promoções especiais
-                      </p>
-                    </div>
-                    <Switch
-                      checked={notifications.marketing_emails}
-                      onCheckedChange={(checked) => 
-                        setNotifications({ ...notifications, marketing_emails: checked })
-                      }
-                    />
-                  </div>
+                  {/* ...outros desativados... */}
                 </div>
-
-                <Button>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Preferências
-                </Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -308,62 +256,32 @@ export default function Settings() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Shield className="mr-2 h-5 w-5" />
-                  Configurações de Segurança
+                  Configurações de Segurança (Não Disponível)
                 </CardTitle>
                 <CardDescription>
-                  Gerencie a segurança da sua conta
+                  Funcionalidades avançadas de segurança não implementadas.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="space-y-4">
+                <div className="space-y-4 opacity-60">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label>Autenticação de Dois Fatores</Label>
                       <p className="text-sm text-muted-foreground">
-                        Adicione uma camada extra de segurança à sua conta
+                        Indisponível no momento
                       </p>
                     </div>
-                    <Switch
-                      checked={security.two_factor_enabled}
-                      onCheckedChange={(checked) => 
-                        setSecurity({ ...security, two_factor_enabled: checked })
-                      }
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Notificações de Login</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Receba emails quando alguém fizer login na sua conta
-                      </p>
-                    </div>
-                    <Switch
-                      checked={security.login_notifications}
-                      onCheckedChange={(checked) => 
-                        setSecurity({ ...security, login_notifications: checked })
-                      }
-                    />
+                    <Switch disabled checked={false} />
                   </div>
                 </div>
-
                 <Separator />
-
-                <div className="space-y-4">
+                <div className="space-y-4 opacity-60">
                   <h3 className="text-lg font-medium">Alterar Senha</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Atualize sua senha regularmente para manter sua conta segura
-                  </p>
-                  <Button variant="outline">
+                  <Button variant="outline" disabled title="Rota de alteração de senha ainda não implementada no backend.">
                     <Lock className="mr-2 h-4 w-4" />
                     Alterar Senha
                   </Button>
                 </div>
-
-                <Button>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Configurações
-                </Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -371,55 +289,20 @@ export default function Settings() {
           <TabsContent value="preferences" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Preferências do Sistema</CardTitle>
+                <CardTitle>Preferências do Sistema (Não Disponível)</CardTitle>
                 <CardDescription>
-                  Configure como você quer usar o AgendaSpace
+                  Não armazenamos preferências locais em banco de dados ainda.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 opacity-60 pointer-events-none">
                 <div className="space-y-4">
                   <div>
                     <Label>Idioma</Label>
-                    <select className="w-full mt-1 px-3 py-2 border border-input rounded-md">
+                    <select className="w-full mt-1 px-3 py-2 border border-input rounded-md" disabled>
                       <option value="pt-BR">Português (Brasil)</option>
-                      <option value="en-US">English (US)</option>
-                      <option value="es-ES">Español</option>
                     </select>
-                  </div>
-
-                  <div>
-                    <Label>Fuso Horário</Label>
-                    <select className="w-full mt-1 px-3 py-2 border border-input rounded-md">
-                      <option value="America/Sao_Paulo">São Paulo (GMT-3)</option>
-                      <option value="America/New_York">New York (GMT-5)</option>
-                      <option value="Europe/London">London (GMT+0)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <Label>Formato de Data</Label>
-                    <select className="w-full mt-1 px-3 py-2 border border-input rounded-md">
-                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Modo Escuro Automático</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Alterna automaticamente entre modo claro e escuro
-                      </p>
-                    </div>
-                    <Switch />
                   </div>
                 </div>
-
-                <Button>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Preferências
-                </Button>
               </CardContent>
             </Card>
           </TabsContent>

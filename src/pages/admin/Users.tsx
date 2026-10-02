@@ -7,18 +7,18 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Users, Search, UserCheck, UserX, Shield, User } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface UserProfile {
   id: string;
-  full_name: string;
+  fullName: string;
   email: string;
   role: string;
-  avatar_url?: string;
-  created_at: string;
+  avatarUrl?: string;
+  createdAt: string;
 }
 
 export default function AdminUsers() {
@@ -33,12 +33,7 @@ export default function AdminUsers() {
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const { data } = await api.get('/profiles');
       setUsers(data || []);
     } catch (error: any) {
       console.error('Erro ao carregar usuários:', error);
@@ -53,15 +48,10 @@ export default function AdminUsers() {
   };
 
   const toggleUserRole = async (userId: string, currentRole: string) => {
-    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    const newRole = currentRole.toLowerCase() === 'admin' ? 'USER' : 'ADMIN';
     
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ role: newRole })
-        .eq('id', userId);
-
-      if (error) throw error;
+      await api.patch(`/profiles/${userId}`, { role: newRole });
 
       setUsers(users.map(user => 
         user.id === userId ? { ...user, role: newRole } : user
@@ -69,7 +59,7 @@ export default function AdminUsers() {
 
       toast({
         title: "Sucesso",
-        description: `Usuário ${newRole === 'admin' ? 'promovido a administrador' : 'removido da administração'}.`
+        description: `Usuário ${newRole === 'ADMIN' ? 'promovido a administrador' : 'removido da administração'}.`
       });
     } catch (error: any) {
       console.error('Erro ao alterar role:', error);
@@ -82,7 +72,7 @@ export default function AdminUsers() {
   };
 
   const filteredUsers = users.filter(user =>
-    user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -91,11 +81,11 @@ export default function AdminUsers() {
   };
 
   const getRoleColor = (role: string) => {
-    return role === 'admin' ? 'destructive' : 'secondary';
+    return role.toLowerCase() === 'admin' ? 'destructive' : 'secondary';
   };
 
   const getRoleIcon = (role: string) => {
-    return role === 'admin' ? Shield : User;
+    return role.toLowerCase() === 'admin' ? Shield : User;
   };
 
   if (loading) {
@@ -139,7 +129,7 @@ export default function AdminUsers() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {users.filter(u => u.role === 'admin').length}
+                {users.filter(u => u.role.toLowerCase() === 'admin').length}
               </div>
             </CardContent>
           </Card>
@@ -151,7 +141,7 @@ export default function AdminUsers() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {users.filter(u => u.role === 'user').length}
+                {users.filter(u => u.role.toLowerCase() === 'user').length}
               </div>
             </CardContent>
           </Card>
@@ -164,7 +154,7 @@ export default function AdminUsers() {
             <CardContent>
               <div className="text-2xl font-bold">
                 {users.filter(u => {
-                  const created = new Date(u.created_at);
+                  const created = new Date(u.createdAt);
                   const now = new Date();
                   return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
                 }).length}
@@ -210,15 +200,15 @@ export default function AdminUsers() {
                       <TableCell>
                         <div className="flex items-center space-x-3">
                           <Avatar className="h-8 w-8">
-                            {user.avatar_url && (
-                              <AvatarImage src={user.avatar_url} alt={user.full_name} />
+                            {user.avatarUrl && (
+                              <AvatarImage src={user.avatarUrl} alt={user.fullName} />
                             )}
                             <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                              {getInitials(user.full_name)}
+                              {getInitials(user.fullName)}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">{user.full_name}</p>
+                            <p className="font-medium">{user.fullName}</p>
                           </div>
                         </div>
                       </TableCell>
@@ -226,11 +216,11 @@ export default function AdminUsers() {
                       <TableCell>
                         <Badge variant={getRoleColor(user.role)}>
                           <RoleIcon className="h-3 w-3 mr-1" />
-                          {user.role === 'admin' ? 'Administrador' : 'Usuário'}
+                          {user.role.toLowerCase() === 'admin' ? 'Administrador' : 'Usuário'}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {format(new Date(user.created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                        {format(new Date(user.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -238,7 +228,7 @@ export default function AdminUsers() {
                           size="sm"
                           onClick={() => toggleUserRole(user.id, user.role)}
                         >
-                          {user.role === 'admin' ? (
+                          {user.role.toLowerCase() === 'admin' ? (
                             <>
                               <UserX className="h-3 w-3 mr-1" />
                               Remover Admin

@@ -1,142 +1,120 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PostCard } from '@/components/feed/PostCard';
 import { NewPostInput } from '@/components/feed/NewPostInput';
 import { useAuth } from '@/contexts/AuthContext';
 import type { FeedPost } from '@/components/feed/feed.types';
-
-// ─── Mock data ──────────────────────────────────────────────────────────────
-// Remove when wiring to real API.
-
-const MOCK_SPACES = [
-  { id: 'space-1', name: 'Coworking Central' },
-  { id: 'space-2', name: 'Sala Zen' },
-  { id: 'space-3', name: 'Estúdio Foto' },
-  { id: 'space-4', name: 'Terraço Vista' },
-];
-
-const INITIAL_POSTS: FeedPost[] = [
-  {
-    id: 'post-1',
-    author: { id: 'u1', name: 'Marina Hotz', avatarUrl: undefined },
-    space: { id: 'space-1', name: 'Coworking Central' },
-    imageUrl: '/feed-spaces.jpg',
-    content: 'Ambiente perfeito para um sprint de duas semanas. A luz natural faz toda a diferença na produtividade.',
-    likesCount: 42,
-    likedByMe: false,
-    totalComments: 7,
-    recentComments: [
-      {
-        id: 'c1',
-        author: { id: 'u2', name: 'Pedro Alves' },
-        content: 'Que espaço incrível! Já reservei para o mês que vem.',
-        createdAt: new Date(Date.now() - 3600 * 2 * 1000).toISOString(),
-      },
-      {
-        id: 'c2',
-        author: { id: 'u3', name: 'Sofia Teixeira' },
-        content: 'A cadeira ergonômica é um luxo separado 🙌',
-        createdAt: new Date(Date.now() - 1200 * 1000).toISOString(),
-      },
-    ],
-    createdAt: new Date(Date.now() - 7200 * 1000).toISOString(),
-  },
-  {
-    id: 'post-2',
-    author: { id: 'u4', name: 'Rafael Costa', avatarUrl: undefined },
-    space: { id: 'space-2', name: 'Sala Zen' },
-    imageUrl: '/feed-spaces.jpg',
-    content: 'Reunião estratégica aqui hoje. O silêncio e a vista do bambuzal deixaram todo mundo mais criativo.',
-    likesCount: 89,
-    likedByMe: true,
-    totalComments: 3,
-    recentComments: [
-      {
-        id: 'c3',
-        author: { id: 'u5', name: 'Fernanda Lima' },
-        content: 'Esse espaço tem algo de diferente. Saio sempre renovado.',
-        createdAt: new Date(Date.now() - 900 * 1000).toISOString(),
-      },
-    ],
-    createdAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'post-3',
-    author: { id: 'u6', name: 'Larissa Campos', avatarUrl: undefined },
-    space: { id: 'space-3', name: 'Estúdio Foto' },
-    imageUrl: '/feed-spaces.jpg',
-    content: 'Ensaio editorial para o meu cliente de moda. O backdrop e os softboxes são profissionais de verdade.',
-    likesCount: 211,
-    likedByMe: false,
-    totalComments: 14,
-    recentComments: [
-      {
-        id: 'c4',
-        author: { id: 'u7', name: 'Bruno Melo' },
-        content: 'Você conseguiu alguma foto linda aqui, com certeza!',
-        createdAt: new Date(Date.now() - 600 * 1000).toISOString(),
-      },
-      {
-        id: 'c5',
-        author: { id: 'u8', name: 'Ana Beatriz' },
-        content: 'Já está na minha lista para o próximo ensaio 📸',
-        createdAt: new Date(Date.now() - 300 * 1000).toISOString(),
-      },
-    ],
-    createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
-  },
-];
-
-// ─── Feed Page ───────────────────────────────────────────────────────────────
+import { useFileUpload } from '@/hooks/useFileUpload';
+import { fetchGlobalPosts, toggleLike as apiToggleLike, createComment as apiCreateComment, createPost as apiCreatePost, deletePost as apiDeletePost } from '@/lib/feed.api';
+import { fetchSpaces } from '@/lib/spaces.api';
+import { useToast } from '@/hooks/use-toast';
 
 export default function FeedPage() {
-  const { profile } = useAuth();
-  const [posts, setPosts] = useState<FeedPost[]>(INITIAL_POSTS);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [spaces, setSpaces] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { uploadFile } = useFileUpload();
+
+  // Load spaces and initial posts
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [spacesData, postsData] = await Promise.all([
+          fetchSpaces(true), // only active
+          fetchGlobalPosts()
+        ]);
+        setSpaces(spacesData.map(s => ({ id: s.id, name: s.name })));
+        setPosts(postsData as unknown as FeedPost[]);
+      } catch (error) {
+        toast({ title: 'Erro', description: 'Não foi possível carregar o feed.', variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [toast]);
 
   // Toggle like on a post
-  const handleLike = useCallback((postId: string) => {
+  const handleLike = useCallback(async (postId: string) => {
+    // Optimistic UI update
+    let wasLiked = false;
     setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              likedByMe: !p.likedByMe,
-              likesCount: p.likedByMe ? p.likesCount - 1 : p.likesCount + 1,
-            }
-          : p
-      )
+      prev.map((p) => {
+        if (p.id === postId) {
+          wasLiked = p.likedByMe;
+          return {
+            ...p,
+            likedByMe: !p.likedByMe,
+            likesCount: p.likedByMe ? p.likesCount - 1 : p.likesCount + 1,
+          };
+        }
+        return p;
+      })
     );
-    // TODO: Call API -> POST /feed/posts/:postId/like
-  }, []);
 
-  // Add a comment optimistically
-  const handleComment = useCallback(
-    (postId: string, content: string) => {
-      const newComment = {
-        id: `c-${Date.now()}`,
-        author: {
-          id: profile?.id ?? 'me',
-          name: profile?.full_name ?? 'Você',
-          avatarUrl: profile?.avatar_url,
-        },
-        content,
-        createdAt: new Date().toISOString(),
-      };
-
+    try {
+      const res = await apiToggleLike(postId);
+      // Optional: sync with server response if needed
       setPosts((prev) =>
         prev.map((p) =>
           p.id === postId
-            ? {
-                ...p,
-                recentComments: [...p.recentComments, newComment],
-                totalComments: p.totalComments + 1,
-              }
+            ? { ...p, likedByMe: res.liked, likesCount: res.totalLikes }
             : p
         )
       );
-      // TODO: Call API -> POST /feed/posts/:postId/comments
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Falha ao curtir publicação.', variant: 'destructive' });
+      // Revert optimistic update
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id === postId) {
+            return {
+              ...p,
+              likedByMe: wasLiked,
+              likesCount: wasLiked ? p.likesCount + 1 : p.likesCount - 1,
+            };
+          }
+          return p;
+        })
+      );
+    }
+  }, [toast]);
+
+  // Add a comment
+  const handleComment = useCallback(
+    async (postId: string, content: string) => {
+      try {
+        const createdComment = await apiCreateComment(postId, { content });
+        
+        const newComment = {
+          id: (createdComment as any)._id || (createdComment as any).id,
+          author: {
+            id: user?.id ?? 'me',
+            name: user?.fullName ?? 'Você',
+            avatarUrl: user?.avatarUrl,
+          },
+          content,
+          createdAt: createdComment.createdAt || new Date().toISOString(),
+        };
+
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId
+              ? {
+                  ...p,
+                  recentComments: [newComment, ...p.recentComments],
+                  totalComments: p.totalComments + 1,
+                }
+              : p
+          )
+        );
+      } catch (error) {
+        toast({ title: 'Erro', description: 'Falha ao adicionar comentário.', variant: 'destructive' });
+      }
     },
-    [profile]
+    [user, toast]
   );
 
   // Create a new post
@@ -150,30 +128,54 @@ export default function FeedPage() {
       content: string;
       imageFile: File;
     }) => {
-      // TODO: Upload image + call API -> POST /feed/posts
-      // For now, create a local preview
-      const space = MOCK_SPACES.find((s) => s.id === spaceId) ?? MOCK_SPACES[0];
-      const newPost: FeedPost = {
-        id: `post-${Date.now()}`,
-        author: {
-          id: profile?.id ?? 'me',
-          name: profile?.full_name ?? 'Você',
-          avatarUrl: profile?.avatar_url,
-        },
-        space,
-        imageUrl: URL.createObjectURL(imageFile),
-        content,
-        likesCount: 0,
-        likedByMe: false,
-        totalComments: 0,
-        recentComments: [],
-        createdAt: new Date().toISOString(),
-      };
+      const url = await uploadFile(imageFile, 'feed');
+      if (!url) return; // Hook handles error toast
 
-      setPosts((prev) => [newPost, ...prev]);
+      try {
+        const created = await apiCreatePost({
+          spaceId,
+          description: content,
+          imageUrl: url,
+        });
+
+        const space = spaces.find((s) => s.id === spaceId) ?? { id: spaceId, name: '' };
+        
+        const newPost: FeedPost = {
+          id: (created as any).id || (created as any)._id,
+          author: {
+            id: user?.id ?? 'me',
+            name: user?.fullName ?? 'Você',
+            avatarUrl: user?.avatarUrl,
+          },
+          space,
+          imageUrl: url,
+          content: created.content || content,
+          likesCount: 0,
+          likedByMe: false,
+          totalComments: 0,
+          recentComments: [],
+          createdAt: created.createdAt || new Date().toISOString(),
+        };
+
+        setPosts((prev) => [newPost, ...prev]);
+        toast({ title: 'Sucesso', description: 'Publicação criada!' });
+      } catch (error) {
+        toast({ title: 'Erro', description: 'Não foi possível criar publicação.', variant: 'destructive' });
+      }
     },
-    [profile]
+    [user, uploadFile, spaces, toast]
   );
+
+  // Delete a post
+  const handleDeletePost = useCallback(async (postId: string) => {
+    try {
+      await apiDeletePost(postId);
+      setPosts((prev) => prev.filter(p => p.id !== postId));
+      toast({ title: 'Sucesso', description: 'Publicação excluída.' });
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.response?.data?.message || 'Não foi possível excluir a publicação.', variant: 'destructive' });
+    }
+  }, [toast]);
 
   return (
     <AppLayout maxWidth="2xl">
@@ -187,7 +189,7 @@ export default function FeedPage() {
 
       {/* New post input */}
       <div className="mb-8">
-        <NewPostInput spaces={MOCK_SPACES} onSubmit={handleNewPost} />
+        <NewPostInput spaces={spaces} onSubmit={handleNewPost} />
       </div>
 
       {/* Divider with label */}
@@ -199,7 +201,9 @@ export default function FeedPage() {
       </div>
 
       {/* Posts list */}
-      {posts.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
+      ) : posts.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-24 text-center">
           <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
             <span className="text-2xl">📷</span>
@@ -217,6 +221,7 @@ export default function FeedPage() {
               post={post}
               onLike={handleLike}
               onComment={handleComment}
+              onDelete={handleDeletePost}
             />
           ))}
         </div>

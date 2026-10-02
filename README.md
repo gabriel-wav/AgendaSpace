@@ -1,150 +1,189 @@
 # 🗓️ AgendaSpace
 
-AgendaSpace é uma plataforma completa e intuitiva para a gestão inteligente de espaços compartilhados. O sistema permite que administradores gerenciem espaços, reservas e usuários, enquanto os usuários podem facilmente encontrar, reservar e gerenciar seus agendamentos.
-
-**🚀 Link Site Publicado:** [https://agenda-space.vercel.app/](https://agenda-space.vercel.app/)
+AgendaSpace é uma plataforma completa para gestão de espaços compartilhados com modelo de conta única (Airbnb-style): qualquer usuário autenticado pode anunciar espaços e realizar reservas com a mesma conta.
 
 **🎥 Vídeo Demonstração:** [https://drive.google.com/file/d/1hw5_MUbcGn4807LvWwtNBhWdivPVq272/view?usp=drive_link](https://drive.google.com/file/d/1hw5_MUbcGn4807LvWwtNBhWdivPVq272/view?usp=drive_link)
 
 ---
 
+## 🛠️ Stack Tecnológica
+
+| Camada | Tecnologia |
+|--------|-----------|
+| **Frontend** | React 18 + TypeScript + Vite + TailwindCSS + shadcn/ui |
+| **Backend** | NestJS (Node.js) + TypeScript |
+| **BD Relacional** | MySQL 8+ via Prisma ORM |
+| **BD NoSQL** | MongoDB via Mongoose (Feed social) |
+| **Autenticação** | JWT (RS256/HS256) com `@nestjs/jwt` |
+| **Upload** | Multipart local com `multer` — arquivos em `public/uploads/` |
+| **Roteamento** | React Router DOM v6 |
+| **Formulários** | React Hook Form |
+
+---
+
 ## ✨ Funcionalidades Implementadas
 
-O projeto conta com dois painéis distintos, um para administradores e outro para usuários, cada um com suas funcionalidades específicas.
+### Conta Única (Modelo Airbnb)
+- Registro público cria conta com papel **USER** por padrão.
+- Qualquer usuário autenticado pode **anunciar espaços** (Meus Espaços), editar, desativar e reativar.
+- O mesmo usuário pode ser **cliente** (reservar espaços de outros) e **anfitrião** (receber reservas nos seus espaços) simultaneamente.
+- **ADMIN** é um papel de gestão global, atribuído via seed protegido — não acessível pelo registro público.
 
-### 🛠️ Painel do Administrador
+### Espaços
+- CRUD completo: nome, descrição, capacidade, preço/hora, recursos e imagem.
+- Upload de imagem via `POST /upload/spaces` (multipart, até 10 MB).
+- Catálogo público com filtros por texto, capacidade, preço e recursos.
+- Visão global de ADMIN em `/admin/spaces`.
 
-- **📊 Dashboard Geral:**  
-  Visualização rápida de estatísticas chave, como total de espaços, reservas para o dia, receita mensal e número de usuários ativos.
+### Reservas
+- Formulário com seleção de data, horário (slots de hora cheia entre 08h–22h), duração máxima de 8h, mínimo 1h de antecedência.
+- `totalPrice` calculado exclusivamente no backend a partir do `pricePerHour` do espaço.
+- `PENDING` **não bloqueia** disponibilidade — conflito verificado apenas ao confirmar/pagar com `SELECT ... FOR UPDATE`.
+- Separação estrita de escopos: `GET /bookings/my-bookings` (cliente) e `GET /bookings/host` (anfitrião).
+- Cancelamento de reservas pelo cliente com mínimo de 2h de antecedência.
 
-- **🏢 Gestão de Espaços (CRUD):**  
-  - Criação, visualização, edição e exclusão de espaços.  
-  - Campos para nome, descrição, capacidade, preço por hora, recursos (ex: Wi-Fi, projetor) e status (ativo/inativo).  
-  - Upload de imagens para os espaços.
+### Pagamento Simulado (Acadêmico) e Contrato
+- PIX e Cartão simulados — **nenhum dado real de cobrança é coletado ou armazenado**.
+- Contrato com texto real da reserva, datas e preços (sem placeholders).
+- Registro persistente em `Payment` e `ContractAcceptance` no MySQL.
+- Idempotência via `idempotencyKey` — clique duplicado não gera pagamento duplo.
+- Confirmação atômica: transação MySQL com `FOR UPDATE` previne dupla confirmação concorrente.
 
-- **📅 Gestão de Reservas:**  
-  - Visualização de todas as reservas da plataforma.  
-  - Filtros por status da reserva (pendente, confirmada, cancelada) e por data.  
-  - Atualização do status das reservas (ex: confirmar uma reserva pendente, marcar como concluída).
+### Dashboards
+- **Cliente:** próximas reservas, horas reservadas, espaços disponíveis.
+- **Anfitrião** (embutido no dashboard de usuário): espaços, reservas hoje, receita mensal (simulada).
+- **ADMIN:** espaços ativos, reservas hoje, usuários cadastrados, receita mensal — calculados no servidor em `GET /dashboard/stats`.
+- **Relatórios** (`/admin/reports`): reservas por status, receita por pagamentos reais via `GET /dashboard/stats`.
 
-- **👥 Gestão de Usuários:**  
-  - Listagem de todos os usuários cadastrados no sistema.  
-  - Visualização de informações como nome, email e data de cadastro.  
-  - Gerenciamento de permissões, permitindo promover um usuário a administrador ou rebaixá-lo a usuário comum.
+### Feed Social (MongoDB)
+- Publicações com imagem (upload real via bucket `feed`), texto e espaço associado.
+- Curtidas com toggle idempotente (índice composto `postId + authorId` no MongoDB).
+- Comentários persistidos e paginados (cursorby `_id`).
+- Moderação: autor, dono do espaço (MySQL) ou ADMIN podem excluir posts/comentários.
+- Exclusão em cascata (comentários e curtidas) ao excluir um post.
 
-- **📈 Relatórios:**  
-  Análise de dados com estatísticas sobre o total de reservas, receita, status das reservas e performance geral da plataforma.
-
-### 🧑‍💻 Painel do Usuário
-
-- **📋 Dashboard Pessoal:**  
-  Resumo das próximas reservas do usuário e espaços disponíveis.
-
-- **🔍 Exploração de Espaços:**  
-  - Visualização de todos os espaços ativos com filtros por nome, capacidade, preço e recursos disponíveis.
-
-- **💳 Sistema de Reservas:**  
-  - Formulário completo para realizar uma reserva, selecionando data e horários disponíveis.  
-  - Cálculo automático do preço total.
-
-- **🗂️ Minhas Reservas:**  
-  - Listagem das reservas do usuário, separadas por "Próximas", "Hoje" e "Histórico".  
-  - Opção de cancelar reservas com antecedência.  
-  - Funcionalidade de "pagamento" simulado para confirmar reservas pendentes.
-
-- **⚙️ Gerenciamento de Perfil:**  
-  Página de configurações para o usuário editar suas informações pessoais, como nome, email e foto de perfil.
-
-### 🌐 Funcionalidades Gerais
-
-- **🔑 Autenticação:** Sistema completo de login e cadastro de usuários, com perfis distintos para administradores e usuários comuns.  
-- **🗄️ Banco de Dados e Backend:** Utilização do Supabase para autenticação, banco de dados (PostgreSQL) e armazenamento de arquivos.  
-- **💻 Interface Moderna:** Construída com React, TypeScript, Tailwind CSS e shadcn/ui, garantindo uma experiência de usuário responsiva e agradável.
+### Usuários e Perfil
+- Avatar via upload real (`POST /upload/avatars`, até 5 MB).
+- Alteração de papel USER ↔ ADMIN apenas por ADMIN; proteção contra remoção do último ADMIN.
+- Atualização de perfil propaga para o AuthContext imediatamente (sem reload).
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
-
-- **Frontend:** Vite, React, TypeScript  
-- **Estilização:** Tailwind CSS, shadcn/ui  
-- **Backend e Banco de Dados:** Supabase (Auth, PostgreSQL, Storage)  
-- **Roteamento:** React Router DOM  
-- **Gerenciamento de Formulários:** React Hook Form com Zod para validação  
-- **UI Components:** Lucide React para ícones  
-- **Gerenciamento de Estado de Cache:** TanStack Query (React Query)  
-
----
-
-## ⚡ Configuração e Execução do Projeto
-
-Siga os passos abaixo para configurar e executar o projeto em seu ambiente local.
+## ⚡ Configuração e Execução Local
 
 ### 📌 Pré-requisitos
 
-- Node.js (versão 18.x ou superior)  
-- npm (geralmente instalado com o Node.js)  
-- Uma conta no Supabase  
+- **Node.js** 18.x ou superior
+- **MySQL** 8+
+- **MongoDB** 6+ (local ou Atlas)
+- **npm** 9+
 
-### 1️⃣ Clonar o Repositório
+### 1️⃣ Clonar e instalar
 
 ```bash
 git clone <URL_DO_REPOSITÓRIO>
-cd agenda-space
-````
-
-### 2️⃣ Instalar as Dependências
-
-```bash
+cd AgendaSpace
 npm install
 ```
 
-### 3️⃣ Configurar o Supabase
-
-1. Crie um novo projeto no Supabase.
-2. Vá para a seção **SQL Editor** do seu projeto.
-3. Copie o conteúdo dos arquivos de migração da pasta `supabase/migrations` e execute-os no SQL Editor:
-
-```
-20250822225051_391e25be-72a8-4765-b3c1-262290de5e06.sql
-20250822225120_6f70d5c0-80d0-40e9-b63a-07c17015a309.sql
-20250829234402_fe1f7d12-b3fe-41ca-b57d-0297afaa1880.sql
-20250908214415_6ca96adb-9353-4a96-947d-abfbb04778da.sql
-20250908214442_3317fd3c-d043-486b-b4cc-1e4d8e0a00d0.sql
-20250909220029_5fdd7ecd-0738-438c-a875-2bcdcad31cb9.sql
-```
-
-4. Vá para **Settings > API** no Supabase para obter a **URL do Projeto** e a **Chave Anônima Pública (public anon key)**.
-
-### 4️⃣ Configurar as Variáveis de Ambiente
-
-1. Na raiz do projeto, crie um arquivo chamado `.env`.
-2. Copie o conteúdo do arquivo `.env` fornecido e cole no novo arquivo:
-
-```env
-VITE_SUPABASE_URL="SUA_URL_DO_PROJETO_SUPABASE"
-VITE_SUPABASE_PUBLISHABLE_KEY="SUA_CHAVE_ANONIMA_PUBLICA_SUPABASE"
-```
-
-3. Substitua `SUA_URL_DO_PROJETO_SUPABASE` e `SUA_CHAVE_ANONIMA_PUBLICA_SUPABASE` pelos valores obtidos no passo anterior.
-
-### 5️⃣ Executar o Projeto
+### 2️⃣ Configurar variáveis de ambiente
 
 ```bash
-npm run dev
+cp .env.example .env
+# Edite .env com suas credenciais
 ```
 
-O projeto estará disponível em `http://localhost:8080` (ou outra porta, se a 8080 estiver em uso).
+Variáveis obrigatórias (ver `.env.example` para descrição completa):
+
+```env
+DATABASE_URL="mysql://usuario:senha@localhost:3306/agendaspace"
+MONGODB_URI="mongodb://localhost:27017/agendaspace"
+JWT_SECRET="sua_chave_secreta_minimo_32_chars"
+```
+
+### 3️⃣ Executar migrations do MySQL (Prisma)
+
+```bash
+# Aplicar todas as migrations incrementais (preserva dados existentes)
+npx prisma migrate deploy
+
+# Gerar o cliente Prisma após a migration
+npx prisma generate
+```
+
+> ⚠️ **Nunca use `prisma migrate reset`** em ambiente com dados reais — isso apaga o banco inteiro.
+
+### 4️⃣ Criar a primeira conta ADMIN (seed protegido)
+
+```bash
+npx ts-node prisma/seed.ts
+```
+
+O seed cria um usuário ADMIN com credenciais configuradas em `.env` (veja `.env.example`).  
+**O registro público nunca aceita `role: ADMIN`.**
+
+### 5️⃣ Executar o projeto
+
+```bash
+# Desenvolvimento: backend (porta 3000) + frontend (porta 8080) em paralelo
+npm run dev
+
+# Ou separadamente:
+npm run dev:backend   # NestJS em watch mode
+npm run dev:frontend  # Vite HMR
+```
+
+### 6️⃣ Verificar tipagem
+
+```bash
+npm run typecheck
+# typecheck:backend e typecheck:frontend executam separadamente
+```
+
+---
+
+## 📁 Estrutura do Projeto
+
+```
+AgendaSpace/
+├── src/
+│   ├── auth/           # NestJS: módulo de autenticação JWT
+│   ├── bookings/       # NestJS: módulo de reservas
+│   ├── dashboard/      # NestJS: endpoints de métricas/relatórios
+│   ├── feed/           # NestJS: módulo Feed (MongoDB/Mongoose)
+│   ├── prisma/         # NestJS: PrismaService global
+│   ├── spaces/         # NestJS: módulo de espaços
+│   ├── upload/         # NestJS: upload de imagens local
+│   ├── users/          # NestJS: módulo de usuários/perfis
+│   ├── components/     # React: componentes reutilizáveis
+│   ├── contexts/       # React: AuthContext
+│   ├── hooks/          # React: hooks customizados
+│   ├── lib/            # React: clientes de API tipados
+│   └── pages/          # React: páginas da aplicação
+├── prisma/
+│   ├── schema.prisma   # Schema MySQL com Prisma
+│   └── migrations/     # Migrations incrementais (não editar as aplicadas)
+├── public/uploads/     # Arquivos de upload (gitignored em produção)
+├── docs/               # Documentação: contratos, métricas, paridade
+└── .env.example        # Modelo de variáveis de ambiente
+```
+
+---
+
+## ⚠️ Limitações e Notas Acadêmicas
+
+1. **Pagamento é simulação acadêmica**: Nenhuma transação financeira real ocorre. PIX e cartão exibem referências fictícias claramente marcadas como demonstrativo.
+2. **Upload local**: Arquivos são salvos em `public/uploads/` no servidor. Em produção, substitua por um bucket S3/GCS.
+3. **Dois bancos de dados (MySQL + MongoDB)**: Não há transação distribuída. A exclusão de posts (MongoDB) com cascata é feita via `Promise.all` — em caso de falha parcial, podem existir curtidas/comentários órfãos no MongoDB. Não há referências SQL apontando para dados Mongo deletados.
+4. **Sem 2FA real**: A aba "Segurança" em Configurações exibe switches mas não persiste dados de 2FA (não implementado).
+5. **Campos bio/telefone**: Não estão no schema do Prisma — campos exibidos no formulário mas descartados no envio.
+6. **Sem notificações reais**: A aba "Notificações" em Configurações é visual; não há integração com email ou push.
 
 ---
 
 ## 👨‍💻 Autores
 
-Este projeto foi desenvolvido e é mantido por:
-
-* **Gabriel** - [GitHub: @gabriel-wav](https://github.com/gabriel-wav)
-* **Danilo** - [GitHub: @danilinhotj187](https://github.com/danilinhotj187)
-* **Antonio** - [GitHub: @Antoniojferreira3](https://github.com/Antoniojferreira3)
-* **Pedro** - [GitHub: @pedroH901](https://github.com/pedroH901)
-
-
-
+- **Gabriel** — [@gabriel-wav](https://github.com/gabriel-wav)
+- **Danilo** — [@danilinhotj187](https://github.com/danilinhotj187)
+- **Antonio** — [@Antoniojferreira3](https://github.com/Antoniojferreira3)
+- **Pedro** — [@pedroH901](https://github.com/pedroH901)

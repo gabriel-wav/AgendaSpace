@@ -26,5 +26,17 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/auth/**/*",
+    "src/bookings/**/*",
+    "src/spaces/**/*",
+    "src/feed/**/*",
+    "src/users/**/*",
+    "src/upload/**/*",
+    "src/dashboard/**/*",
+    "src/prisma/**/*",
+    "src/main.ts",
+    "src/app.module.ts"
+  ]
 }

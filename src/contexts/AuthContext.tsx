@@ -17,29 +17,30 @@ export interface AuthUser {
   email: string;
   fullName: string;
   avatarUrl: string | null;
-  role: 'ADMIN' | 'TENANT' | 'USER';
+  role: 'ADMIN' | 'USER';
 }
 
 interface AuthContextType {
   /** The full authenticated user (null when logged out) */
   user: AuthUser | null;
+  /** Alias para compatibilidade com consumidores legados de 'profile' */
+  profile: AuthUser | null;
   /** True while checking token validity on mount */
   loading: boolean;
   /** True when the user holds ADMIN role */
   isAdmin: boolean;
-  /** True when the user holds TENANT role */
-  isTenant: boolean;
   /** Authenticate against POST /auth/login */
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  /** Create an account via POST /auth/register */
+  /** Create an account via POST /auth/register (sempre USER) */
   signUp: (
     email: string,
     password: string,
-    fullName: string,
-    role?: string
+    fullName: string
   ) => Promise<{ error: string | null }>;
   /** Clear token and user state */
   signOut: () => void;
+  /** Recarrega os dados do usuário a partir de GET /auth/me */
+  refreshUser: () => Promise<void>;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Fetch the current user's profile from the API using the stored token.
-   * Called once on mount if a valid token exists.
+   * Called once on mount if a valid token exists or on refresh.
    */
   const hydrateUser = useCallback(async () => {
     if (!isTokenValid()) {
@@ -110,13 +111,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (
       email: string,
       password: string,
-      fullName: string,
-      role = 'USER'
+      fullName: string
     ): Promise<{ error: string | null }> => {
       try {
         const { data } = await api.post<{ access_token: string; user: AuthUser }>(
           '/auth/register',
-          { email, password, fullName, role: role.toUpperCase() }
+          { email, password, fullName }
         );
 
         saveToken(data.access_token);
@@ -142,12 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthContextType = {
     user,
+    profile: user,
     loading,
     isAdmin: user?.role === 'ADMIN',
-    isTenant: user?.role === 'TENANT',
     signIn,
     signUp,
     signOut,
+    refreshUser: hydrateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

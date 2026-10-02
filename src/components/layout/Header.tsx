@@ -12,6 +12,8 @@ import {
   User,
   ChevronDown,
   Shield,
+  Compass,
+  Inbox,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -81,12 +83,12 @@ function NavPill({ items }: { items: NavItem[] }) {
 }
 
 function ProfileMenu() {
-  const { profile, user, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const displayName = user?.fullName || profile?.full_name || 'Usuário';
-  const displayEmail = user?.email || profile?.email || '';
-  const avatarUrl = user?.avatarUrl || profile?.avatar_url;
+  const displayName = user?.fullName || 'Usuário';
+  const displayEmail = user?.email || '';
+  const avatarUrl = user?.avatarUrl;
 
   const initials = (name: string) =>
     name
@@ -210,7 +212,7 @@ function MobileNav({ items }: { items: NavItem[] }) {
 }
 
 export function Header() {
-  const { isAdmin, isTenant } = useAuth();
+  const { isAdmin } = useAuth();
 
   const adminNav: NavItem[] = [
     { label: 'Dashboard',  href: '/dashboard',       icon: LayoutDashboard },
@@ -220,21 +222,15 @@ export function Header() {
     { label: 'Usuários',   href: '/admin/users',      icon: Users },
   ];
 
-  const tenantNav: NavItem[] = [
-    { label: 'Dashboard',   href: '/dashboard',       icon: LayoutDashboard },
-    { label: 'Meus Espaços', href: '/admin/spaces',    icon: Building2 },
-    { label: 'Reservas',    href: '/admin/bookings',  icon: Calendar },
-    { label: 'Feed',        href: '/feed',            icon: ImagePlay },
-  ];
-
   const userNav: NavItem[] = [
-    { label: 'Dashboard',  href: '/dashboard',   icon: LayoutDashboard },
-    { label: 'Espaços',    href: '/spaces',      icon: Building2 },
-    { label: 'Reservas',   href: '/my-bookings', icon: Calendar },
-    { label: 'Feed',       href: '/feed',        icon: ImagePlay },
+    { label: 'Explorar',           href: '/spaces',        icon: Compass },
+    { label: 'Minhas Reservas',    href: '/my-bookings',   icon: Calendar },
+    { label: 'Meus Espaços',       href: '/my-spaces',     icon: Building2 },
+    { label: 'Reservas Recebidas', href: '/host/bookings', icon: Inbox },
+    { label: 'Feed',               href: '/feed',          icon: ImagePlay },
   ];
 
-  const navItems = isAdmin ? adminNav : isTenant ? tenantNav : userNav;
+  const navItems = isAdmin ? adminNav : userNav;
 
   return (
     <header className="sticky top-0 z-40 h-12 w-full border-b border-border/60 bg-background/70 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
@@ -247,11 +243,6 @@ export function Header() {
             <span className="hidden sm:inline-flex items-center gap-1 rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
               <Shield className="h-2.5 w-2.5" />
               Admin
-            </span>
-          ) : isTenant ? (
-            <span className="hidden sm:inline-flex items-center gap-1 rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-              <Building2 className="h-2.5 w-2.5" />
-              Locatário
             </span>
           ) : null}
         </div>

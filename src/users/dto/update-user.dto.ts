@@ -15,6 +15,6 @@ export class UpdateUserDto {
   email?: string;
 
   @IsOptional()
-  @IsEnum(Role, { message: 'Role deve ser ADMIN, TENANT ou USER.' })
+  @IsEnum(Role, { message: 'Role deve ser ADMIN ou USER.' })
   role?: Role;
 }

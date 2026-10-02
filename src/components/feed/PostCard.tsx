@@ -3,6 +3,13 @@ import { Heart, MessageCircle, MoreHorizontal, Send } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { FeedPost, FeedComment } from './feed.types';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Trash2 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -153,9 +160,10 @@ interface PostCardProps {
   post: FeedPost;
   onLike: (postId: string) => void;
   onComment: (postId: string, content: string) => void;
+  onDelete?: (postId: string) => void;
 }
 
-export function PostCard({ post, onLike, onComment }: PostCardProps) {
+export function PostCard({ post, onLike, onComment, onDelete }: PostCardProps) {
   const [showAllComments, setShowAllComments] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
 
@@ -181,12 +189,24 @@ export function PostCard({ post, onLike, onComment }: PostCardProps) {
         </div>
         <div className="flex items-center gap-2 text-muted-foreground/50">
           <span className="text-[11px]">{timeAgo(post.createdAt)}</span>
-          <button
-            className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:text-foreground"
-            aria-label="Mais opções"
-          >
-            <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
-          </button>
+          {onDelete && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:text-foreground"
+                  aria-label="Mais opções"
+                >
+                  <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer" onClick={() => onDelete(post.id)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  <span>Excluir publicação</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 

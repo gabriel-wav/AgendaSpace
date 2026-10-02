@@ -10,13 +10,23 @@ import { BookingsModule } from './bookings/bookings.module';
 import { FeedModule } from './feed/feed.module';
 import { UsersModule } from './users/users.module';
 import { UploadModule } from './upload/upload.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot(
-      process.env.MONGODB_URI || 'mongodb://localhost:27017/agendaspace',
-    ),
+    MongooseModule.forRootAsync({
+      useFactory: () => {
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+          throw new Error(
+            '[AppModule] Variável de ambiente obrigatória "MONGODB_URI" não foi definida.',
+          );
+        }
+        return { uri: mongoUri };
+      },
+    }),
+
     // Serve arquivos estáticos de public/uploads em /uploads/*
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'public', 'uploads'),
@@ -33,6 +43,7 @@ import { UploadModule } from './upload/upload.module';
     FeedModule,
     UsersModule,
     UploadModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

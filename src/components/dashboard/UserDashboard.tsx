@@ -6,16 +6,16 @@ import { Calendar, MapPin, Clock, Search, Plus, Building2, Eye, TrendingUp } fro
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { BookingForm } from '@/components/booking/BookingForm';
 import { fetchSpaces } from '@/lib/spaces.api';
-import { fetchBookings } from '@/lib/bookings.api';
+import { fetchClientStats, fetchHostStats } from '@/lib/dashboard.api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export function UserDashboard() {
-  const { profile, user } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [selectedSpace, setSelectedSpace] = useState<any>(null);
@@ -27,50 +27,45 @@ export function UserDashboard() {
     availableSpaces: 0
   });
   const [loading, setLoading] = useState(true);
+  const [hostStats, setHostStats] = useState<any>(null);
 
   // Fetch real data from database
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [spacesData, bookingsData] = await Promise.all([
-          fetchSpaces(true).catch(() => []),
-          fetchBookings().catch(() => []),
-        ]);
+  const fetchData = async () => {
+    try {
+      const [spacesData, clientData, hostData] = await Promise.all([
+        fetchSpaces(true).catch(() => []),
+        fetchClientStats().catch(() => null),
+        fetchHostStats().catch(() => null),
+      ]);
 
-        setSpaces(spacesData.slice(0, 3));
+      setSpaces(spacesData.slice(0, 3));
 
-        const now = new Date();
-        const upcoming = bookingsData.filter((b) => {
-          const dt = new Date(b.startDatetime || (b as any).start_datetime);
-          return dt >= now;
-        });
-
-        const totalHours = upcoming.reduce((acc, booking) => {
-          const start = new Date(booking.startDatetime || (booking as any).start_datetime);
-          const end = new Date(booking.endDatetime || (booking as any).end_datetime);
-          const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-          return acc + (isNaN(hours) ? 0 : Math.max(0, hours));
-        }, 0);
-
-        setBookings(upcoming.slice(0, 5));
+      if (clientData) {
         setStats({
-          upcomingBookings: upcoming.length,
-          totalHours: Math.round(totalHours),
-          availableSpaces: spacesData.length,
+          upcomingBookings: clientData.upcomingBookings,
+          totalHours: Math.round(clientData.totalHours),
+          availableSpaces: clientData.availableSpaces,
         });
-      } catch (error: any) {
-        toast({
-          title: "Erro ao carregar dados",
-          description: error.response?.data?.message || error.message,
-          variant: "destructive"
-        });
-      } finally {
-        setLoading(false);
+        setBookings(clientData.recentBookings || []);
       }
-    };
+      
+      if (hostData && hostData.totalSpaces > 0) {
+        setHostStats(hostData);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar dados",
+        description: error.response?.data?.message || error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchData();
-  }, [toast]);
+  }, []);
 
 
   return (
@@ -80,7 +75,7 @@ export function UserDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">
-              Olá, {profile?.full_name?.split(' ')[0] || 'Usuário'}! 👋
+              Olá, {user?.fullName?.split(' ')[0] || 'Usuário'}! 👋
             </h1>
             <p className="text-muted-foreground mt-1">
               Encontre e reserve o espaço perfeito para suas necessidades
@@ -129,6 +124,52 @@ export function UserDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Visão de Anfitrião (Host) */}
+        {hostStats && (
+          <div className="mt-8 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                Painel do Anfitrião
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="bg-primary/5 border-primary/20">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Meus Espaços</CardTitle>
+                  <Building2 className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{hostStats.totalSpaces}</div>
+                  <p className="text-xs text-muted-foreground">Cadastrados</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-primary/5 border-primary/20">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Reservas Hoje</CardTitle>
+                  <Calendar className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{hostStats.todayBookings}</div>
+                  <p className="text-xs text-muted-foreground">Nos seus espaços</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-primary/5 border-primary/20">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Receita Mensal (Simulada)</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">R$ {Number(hostStats.monthlyRevenue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <p className="text-xs text-muted-foreground">Pagas e não canceladas</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
 
         {/* My Bookings */}
         <Card>
@@ -227,7 +268,7 @@ export function UserDashboard() {
                                 <div>
                                   <p className="text-sm font-medium mb-2">Recursos</p>
                                   <div className="flex flex-wrap gap-1">
-                                    {selectedBooking.spaces?.resources?.map((resource: string) => (
+                                    {(selectedBooking.space || selectedBooking.spaces)?.resources?.map((resource: string) => (
                                       <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
                                         {resource}
                                       </span>
@@ -310,35 +351,13 @@ export function UserDashboard() {
                         <span>{space.capacity} pessoas</span>
                         <span className="font-medium text-foreground">R$ {space.pricePerHour || space.price_per_hour}/h</span>
                       </div>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button 
-                            size="sm" 
-                            className="w-full"
-                            onClick={() => setSelectedSpace(space)}
-                          >
-                            Reservar
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle>Reservar {selectedSpace?.name}</DialogTitle>
-                          </DialogHeader>
-                          {selectedSpace && (
-                            <BookingForm 
-                              space={{
-                                id: selectedSpace.id,
-                                name: selectedSpace.name,
-                                description: selectedSpace.description || '',
-                                capacity: selectedSpace.capacity,
-                                price_per_hour: parseFloat(selectedSpace.pricePerHour || selectedSpace.price_per_hour) || 0,
-                                resources: selectedSpace.resources || []
-                              }}
-                              onSuccess={() => setSelectedSpace(null)}
-                            />
-                          )}
-                        </DialogContent>
-                      </Dialog>
+                      <Button 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => setSelectedSpace(space)}
+                      >
+                        Reservar
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -347,6 +366,33 @@ export function UserDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Booking Modal */}
+      <Dialog open={!!selectedSpace} onOpenChange={(open) => !open && setSelectedSpace(null)}>
+        <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl">
+          {selectedSpace && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-xl flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  Reservar {selectedSpace.name}
+                </DialogTitle>
+                <DialogDescription>
+                  Escolha a data e o período desejado para solicitar a sua reserva.
+                </DialogDescription>
+              </DialogHeader>
+              <BookingForm 
+                space={selectedSpace}
+                onSuccess={() => {
+                  setSelectedSpace(null);
+                  fetchData();
+                }}
+                onCancel={() => setSelectedSpace(null)}
+              />
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

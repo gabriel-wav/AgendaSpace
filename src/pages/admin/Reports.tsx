@@ -3,8 +3,10 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart3, TrendingUp, Calendar, DollarSign, Users, Building2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { api } from '@/lib/api';
+import { fetchBookings as apiFetchBookings, Booking } from '@/lib/bookings.api';
+import { fetchAdminStats } from '@/lib/dashboard.api';
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -13,7 +15,7 @@ interface ReportData {
   totalRevenue: number;
   totalUsers: number;
   totalSpaces: number;
-  recentBookings: any[];
+  recentBookings: Booking[];
   monthlyRevenue: number;
   pendingBookings: number;
   confirmedBookings: number;
@@ -41,61 +43,34 @@ export default function AdminReports() {
 
   const fetchReportData = async () => {
     try {
-      // Buscar dados de reservas
-      const { data: bookings, error: bookingsError } = await supabase
-        .from('bookings')
-        .select(`
-          *,
-          spaces:space_id (name)
-        `);
+      // Buscar dados consolidados do backend (métricas reais)
+      const [bookings, adminStats] = await Promise.all([
+        apiFetchBookings(),
+        fetchAdminStats(),
+      ]);
 
-      if (bookingsError) throw bookingsError;
-
-      // Buscar dados de usuários
-      const { data: users, error: usersError } = await supabase
-        .from('profiles')
-        .select('*');
-
-      if (usersError) throw usersError;
-
-      // Buscar dados de espaços
-      const { data: spaces, error: spacesError } = await supabase
-        .from('spaces')
-        .select('*');
-
-      if (spacesError) throw spacesError;
-
-      // Calcular estatísticas
-      const now = new Date();
-      const monthStart = startOfMonth(now);
-      const monthEnd = endOfMonth(now);
-
-      const totalRevenue = bookings?.reduce((sum, booking) => 
-        sum + Number(booking.total_price), 0) || 0;
-
-      const monthlyBookings = bookings?.filter(booking => {
-        const bookingDate = new Date(booking.created_at);
-        return bookingDate >= monthStart && bookingDate <= monthEnd;
-      }) || [];
-
-      const monthlyRevenue = monthlyBookings.reduce((sum, booking) => 
-        sum + Number(booking.total_price), 0);
-
-      const pendingBookings = bookings?.filter(b => b.status === 'pending').length || 0;
-      const confirmedBookings = bookings?.filter(b => b.status === 'confirmed').length || 0;
-      const cancelledBookings = bookings?.filter(b => b.status === 'cancelled').length || 0;
+      const pendingBookings = bookings?.filter(b => b.status.toLowerCase() === 'pending').length || 0;
+      const confirmedBookings = bookings?.filter(b => b.status.toLowerCase() === 'confirmed').length || 0;
+      const cancelledBookings = bookings?.filter(b => b.status.toLowerCase() === 'cancelled').length || 0;
 
       // Reservas recentes (últimos 7 dias)
+      const now = new Date();
       const sevenDaysAgo = subDays(now, 7);
-      const recentBookings = bookings?.filter(booking => 
-        new Date(booking.created_at) >= sevenDaysAgo
+      const recentBookings = bookings?.filter(booking =>
+        new Date(booking.createdAt) >= sevenDaysAgo
       ).slice(0, 10) || [];
+
+      // Receita: usa dados reais do backend (apenas pagamentos SUCCESS não cancelados)
+      const monthlyRevenue = Number(adminStats.monthlyRevenue) || 0;
+      const totalRevenue = bookings?.filter(b =>
+        b.status.toLowerCase() === 'confirmed' || b.status.toLowerCase() === 'completed'
+      ).reduce((sum, b) => sum + Number(b.totalPrice), 0) || 0;
 
       setReportData({
         totalBookings: bookings?.length || 0,
         totalRevenue,
-        totalUsers: users?.length || 0,
-        totalSpaces: spaces?.length || 0,
+        totalUsers: adminStats.activeUsers || 0,
+        totalSpaces: adminStats.totalSpaces || 0,
         recentBookings,
         monthlyRevenue,
         pendingBookings,
@@ -123,7 +98,7 @@ export default function AdminReports() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed': return 'bg-green-500';
       case 'pending': return 'bg-yellow-500';
       case 'cancelled': return 'bg-red-500';
@@ -132,7 +107,7 @@ export default function AdminReports() {
   };
 
   const getStatusLabel = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed': return 'Confirmada';
       case 'pending': return 'Pendente';
       case 'cancelled': return 'Cancelada';
@@ -290,13 +265,13 @@ export default function AdminReports() {
                     {reportData.recentBookings.slice(0, 5).map((booking) => (
                       <div key={booking.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="space-y-1">
-                          <p className="text-sm font-medium">{booking.spaces?.name}</p>
+                          <p className="text-sm font-medium">{booking.space?.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {format(new Date(booking.start_datetime), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                            {format(new Date(booking.startDatetime), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
                           </p>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-sm font-medium">{formatCurrency(Number(booking.total_price))}</span>
+                          <span className="text-sm font-medium">{formatCurrency(Number(booking.totalPrice))}</span>
                           <div className={`w-2 h-2 rounded-full ${getStatusColor(booking.status)}`}></div>
                         </div>
                       </div>

@@ -10,8 +10,8 @@ function createQueryChain(table: string, endpointParams: Record<string, any> = {
           const data = Array.isArray(res.data) ? res.data : (res.data ? [res.data] : []);
           return { data, error: null, count: data.length };
         })
-        .catch(() => {
-          return { data: [], error: null, count: 0 };
+        .catch((err) => {
+          return { data: null, error: err, count: 0 };
         })
         .then(onfulfilled, onrejected);
     },
@@ -20,7 +20,7 @@ function createQueryChain(table: string, endpointParams: Record<string, any> = {
       api
         .get(`/${table}`)
         .then((res) => ({ data: Array.isArray(res.data) ? res.data[0] || null : res.data, error: null }))
-        .catch(() => ({ data: null, error: null })),
+        .catch((err) => ({ data: null, error: err })),
   };
 
   const methods = ['select', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'is', 'like', 'ilike', 'order', 'limit', 'range'];
@@ -44,20 +44,20 @@ export const supabase = {
       api
         .post(`/${table}`, data)
         .then((res) => ({ data: res.data, error: null }))
-        .catch(() => ({ data: null, error: null })),
+        .catch((err) => ({ data: null, error: err })),
     update: (data: any) => ({
       eq: (field: string, val: any) =>
         api
           .patch(`/${table}/${val}`, data)
           .then((res) => ({ data: res.data, error: null }))
-          .catch(() => ({ data: null, error: null })),
+          .catch((err) => ({ data: null, error: err })),
     }),
     delete: () => ({
       eq: (field: string, val: any) =>
         api
           .delete(`/${table}/${val}`)
           .then((res) => ({ data: res.data, error: null }))
-          .catch(() => ({ data: null, error: null })),
+          .catch((err) => ({ data: null, error: err })),
     }),
   }),
   storage: {

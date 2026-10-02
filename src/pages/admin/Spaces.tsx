@@ -8,6 +8,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import { useFileUpload } from '@/hooks/useFileUpload';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,12 +44,14 @@ import {
   Space,
   CreateSpacePayload,
   fetchSpaces as apiFetchSpaces,
+  fetchMySpaces,
   createSpace,
   updateSpace,
   deleteSpace,
 } from '@/lib/spaces.api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Primitives ─────────────────────────────────────────────────────────────
 
@@ -111,43 +114,9 @@ interface SpaceSheetProps {
   onSaved: () => void;
 }
 
-/** Redimensiona e comprime imagem no navegador para manter o payload leve e rápido (< 80KB) */
-function compressImage(file: File, maxWidth = 1000, quality = 0.75): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(e.target?.result as string);
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
   const { toast } = useToast();
+  const { uploadFile, uploading } = useFileUpload();
   const [saving, setSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -186,6 +155,9 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
         image_url: '',
         is_active: true,
       });
+      if (imagePreview && imagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview);
+      }
       setImagePreview(null);
     }
     setImageFile(null);
@@ -198,6 +170,9 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
+    if (imagePreview && imagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreview);
+    }
     setImagePreview(URL.createObjectURL(file));
   };
 
@@ -208,16 +183,31 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
     try {
       let finalImageUrl = form.image_url.trim() || undefined;
 
-      // Se o usuário selecionou um arquivo local, comprime e converte
       if (imageFile) {
-        finalImageUrl = await compressImage(imageFile);
+        const uploadedUrl = await uploadFile(imageFile, 'spaces');
+        if (!uploadedUrl) {
+          // hook já mostra toast de erro
+          setSaving(false);
+          return;
+        }
+        finalImageUrl = uploadedUrl;
+      }
+
+      const capacity = parseInt(form.capacity, 10);
+      const price = parseFloat(form.price_per_hour);
+
+      if (isNaN(capacity) || capacity < 1) {
+        throw new Error('A capacidade deve ser um número inteiro válido maior que 0.');
+      }
+      if (isNaN(price) || price < 0) {
+        throw new Error('O preço por hora deve ser um valor numérico válido.');
       }
 
       const payload: CreateSpacePayload = {
         name: form.name.trim(),
         description: form.description?.trim() || undefined,
-        capacity: parseInt(form.capacity, 10) || 1,
-        pricePerHour: parseFloat(form.price_per_hour) || 0,
+        capacity,
+        pricePerHour: price,
         resources: form.resources
           .split(',')
           .map((r) => r.trim())
@@ -236,6 +226,9 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
 
       onSaved();
       onOpenChange(false);
+      if (imagePreview && imagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview);
+      }
     } catch (err: any) {
       const message = err.response?.data?.message
         ? Array.isArray(err.response.data.message)
@@ -281,6 +274,9 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
                   type="button"
                   onClick={() => {
                     setImageFile(null);
+                    if (imagePreview && imagePreview.startsWith('blob:')) {
+                      URL.revokeObjectURL(imagePreview);
+                    }
                     setImagePreview(null);
                     setForm((f) => ({ ...f, image_url: '' }));
                   }}
@@ -427,7 +423,7 @@ function SpaceSheet({ open, onOpenChange, editing, onSaved }: SpaceSheetProps) {
                 'disabled:cursor-not-allowed disabled:opacity-40',
               )}
             >
-              {saving ? (
+              {(saving || uploading) ? (
                 <span className="inline-flex items-center gap-2 justify-center">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Salvando…
@@ -590,7 +586,7 @@ function SkeletonRow() {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function AdminSpaces() {
+export default function AdminSpaces({ mode = 'admin' }: { mode?: 'admin' | 'host' }) {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -598,11 +594,12 @@ export default function AdminSpaces() {
   const [editing, setEditing] = useState<Space | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user, isAdmin } = useAuth();
 
   const loadSpaces = async () => {
     setLoading(true);
     try {
-      const data = await apiFetchSpaces(false);
+      const data = mode === 'host' ? await fetchMySpaces() : await apiFetchSpaces(false);
       setSpaces(data ?? []);
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || 'Erro ao carregar espaços';
@@ -614,7 +611,7 @@ export default function AdminSpaces() {
 
   useEffect(() => {
     loadSpaces();
-  }, []);
+  }, [mode]);
 
   const openCreate = () => {
     setEditing(null);
@@ -645,8 +642,10 @@ export default function AdminSpaces() {
     if (!deleteTarget) return;
     try {
       await deleteSpace(deleteTarget);
-      setSpaces((prev) => prev.filter((s) => s.id !== deleteTarget));
-      toast({ title: 'Espaço excluído com sucesso.' });
+      setSpaces((prev) =>
+        prev.map((s) => (s.id === deleteTarget ? { ...s, isActive: false } : s))
+      );
+      toast({ title: 'Espaço desativado com sucesso.' });
     } catch (err: any) {
       const message = err.response?.data?.message || err.message;
       toast({ title: 'Erro ao excluir', description: message, variant: 'destructive' });
@@ -655,13 +654,17 @@ export default function AdminSpaces() {
     }
   };
 
-  const filtered = spaces.filter(
-    (s) =>
+  const filtered = spaces.filter((s) => {
+    const matchesSearch = 
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      s.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesOwner = mode === 'host' ? true : (isAdmin || s.createdBy?.id === user?.id || (s as any).createdById === user?.id);
 
-  const activeCount = spaces.filter((s) => s.isActive).length;
+    return matchesSearch && matchesOwner;
+  });
+
+  const activeCount = filtered.filter((s) => s.isActive).length;
 
   return (
     <AppLayout>
@@ -669,9 +672,13 @@ export default function AdminSpaces() {
         {/* Page header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaços</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              {mode === 'host' ? 'Meus Espaços' : 'Espaços (Gestão Global)'}
+            </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {spaces.length} espaços cadastrados · {activeCount} ativos
+              {mode === 'host'
+                ? `${spaces.length} ${spaces.length === 1 ? 'espaço anunciado' : 'espaços anunciados'} · ${activeCount} ativos`
+                : `${spaces.length} espaços cadastrados · ${activeCount} ativos`}
             </p>
           </div>
           <button
@@ -683,7 +690,7 @@ export default function AdminSpaces() {
             )}
           >
             <Plus className="h-4 w-4" strokeWidth={2} />
-            Novo espaço
+            {mode === 'host' ? 'Anunciar espaço' : 'Novo espaço'}
           </button>
         </div>
 
@@ -720,11 +727,17 @@ export default function AdminSpaces() {
                 <Building2 className="h-4.5 w-4.5 text-muted-foreground/50" strokeWidth={1.5} />
               </div>
               <p className="text-sm font-medium text-foreground">
-                {searchTerm ? 'Nenhum resultado encontrado' : 'Nenhum espaço cadastrado'}
+                {searchTerm
+                  ? 'Nenhum resultado encontrado'
+                  : mode === 'host'
+                  ? 'Você ainda não anunciou nenhum espaço'
+                  : 'Nenhum espaço cadastrado'}
               </p>
               <p className="text-xs text-muted-foreground">
                 {searchTerm
                   ? 'Tente buscar por um nome diferente.'
+                  : mode === 'host'
+                  ? 'Anuncie seu primeiro espaço para começar a receber reservas.'
                   : 'Crie seu primeiro espaço para começar.'}
               </p>
               {!searchTerm && (
@@ -732,7 +745,7 @@ export default function AdminSpaces() {
                   onClick={openCreate}
                   className="mt-1 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-85 transition-opacity"
                 >
-                  Criar primeiro espaço
+                  {mode === 'host' ? 'Anunciar primeiro espaço' : 'Criar primeiro espaço'}
                 </button>
               )}
             </div>
@@ -752,7 +765,7 @@ export default function AdminSpaces() {
         {/* Count footer */}
         {filtered.length > 0 && !loading && (
           <p className="text-xs text-muted-foreground/50 tabular-nums">
-            {filtered.length} de {spaces.length} espaços
+            {filtered.length} espaços encontrados
           </p>
         )}
       </div>

@@ -4,7 +4,7 @@ import { AdminDashboard } from '@/components/dashboard/AdminDashboard';
 import { UserDashboard } from '@/components/dashboard/UserDashboard';
 
 export default function Dashboard() {
-  const { isAdmin, isTenant } = useAuth();
+  const { isAdmin } = useAuth();
 
-  return (isAdmin || isTenant) ? <AdminDashboard /> : <UserDashboard />;
+  return isAdmin ? <AdminDashboard /> : <UserDashboard />;
 }
