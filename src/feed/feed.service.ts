@@ -9,6 +9,8 @@ import { Model, Types } from 'mongoose';
 import { Post, PostDocument } from './schemas/post.schema';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { Like, LikeDocument } from './schemas/like.schema';
+import { Report, ReportDocument } from './schemas/report.schema';
+import { HiddenPost, HiddenPostDocument } from './schemas/hidden-post.schema';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -25,6 +27,12 @@ export class FeedService {
     @InjectModel(Like.name)
     private readonly likeModel: Model<LikeDocument>,
 
+    @InjectModel(Report.name)
+    private readonly reportModel: Model<ReportDocument>,
+
+    @InjectModel(HiddenPost.name)
+    private readonly hiddenPostModel: Model<HiddenPostDocument>,
+
     // PrismaService injetado para consultar e cruzar dados com o MySQL
     private readonly prisma: PrismaService,
   ) {}
@@ -35,11 +43,15 @@ export class FeedService {
   async createPost(authorId: string, dto: CreatePostDto) {
     const space = await this.prisma.space.findUnique({
       where: { id: dto.spaceId },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, isDeleted: true },
     });
 
     if (!space) {
       throw new NotFoundException(`Espaço com ID "${dto.spaceId}" não encontrado.`);
+    }
+
+    if (space.isDeleted) {
+      throw new BadRequestException('Não é possível criar publicações para um espaço excluído.');
     }
 
     if (!space.isActive) {
@@ -150,6 +162,13 @@ export class FeedService {
     if (cursor) {
       match._id = { $lt: new Types.ObjectId(cursor) };
     }
+    if (currentUserId) {
+      const hidden = await this.hiddenPostModel.find({ userId: currentUserId }).select('postId');
+      const hiddenIds = hidden.map(h => h.postId);
+      if (hiddenIds.length > 0) {
+        match._id = { ...match._id, $nin: hiddenIds };
+      }
+    }
 
     const posts = await this.postModel.aggregate([
       {
@@ -177,7 +196,7 @@ export class FeedService {
               },
             },
             {
-              $sort: { createdAt: -1 },
+              $sort: { createdAt: -1, _id: -1 },
             },
             {
               $limit: 3,
@@ -215,6 +234,13 @@ export class FeedService {
     if (cursor) {
       match._id = { $lt: new Types.ObjectId(cursor) };
     }
+    if (currentUserId) {
+      const hidden = await this.hiddenPostModel.find({ userId: currentUserId }).select('postId');
+      const hiddenIds = hidden.map(h => h.postId);
+      if (hiddenIds.length > 0) {
+        match._id = { ...match._id, $nin: hiddenIds };
+      }
+    }
 
     const posts = await this.postModel.aggregate([
       { $match: match },
@@ -233,7 +259,7 @@ export class FeedService {
           let: { currentPostId: '$_id' },
           pipeline: [
             { $match: { $expr: { $eq: ['$postId', '$$currentPostId'] } } },
-            { $sort: { _id: -1 } },
+            { $sort: { createdAt: -1, _id: -1 } },
             { $limit: 3 },
           ],
           as: 'recentComments',
@@ -421,5 +447,187 @@ export class FeedService {
       message: 'Comentário excluído com sucesso.',
       commentId,
     };
+  }
+
+  async hidePost(postId: string, userId: string) {
+    if (!Types.ObjectId.isValid(postId)) throw new BadRequestException('ID inválido');
+    await this.hiddenPostModel.updateOne(
+      { postId: new Types.ObjectId(postId), userId },
+      { $setOnInsert: { postId: new Types.ObjectId(postId), userId } },
+      { upsert: true }
+    );
+    return { success: true };
+  }
+
+  async unhidePost(postId: string, userId: string) {
+    if (!Types.ObjectId.isValid(postId)) throw new BadRequestException('ID inválido');
+    await this.hiddenPostModel.deleteOne({ postId: new Types.ObjectId(postId), userId });
+    return { success: true };
+  }
+
+  async reportPost(postId: string, userId: string, reason: string, description?: string) {
+    if (!Types.ObjectId.isValid(postId)) throw new BadRequestException('ID inválido');
+    
+    const existing = await this.reportModel.findOne({
+      postId: new Types.ObjectId(postId),
+      reporterId: userId,
+      status: 'PENDING'
+    });
+
+    if (existing) {
+      return { success: true };
+    }
+
+    await this.reportModel.create({
+      postId: new Types.ObjectId(postId),
+      reporterId: userId,
+      reason,
+      description,
+      status: 'PENDING'
+    });
+    
+    return { success: true };
+  }
+
+  async getPostComments(postId: string, cursor?: string, limit: number = 10) {
+    if (!Types.ObjectId.isValid(postId)) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
+
+    const postObjectId = new Types.ObjectId(postId);
+    const post = await this.postModel.findById(postObjectId);
+    if (!post) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
+
+    const match: any = { postId: postObjectId };
+
+    if (cursor && Types.ObjectId.isValid(cursor)) {
+      const cursorComment = await this.commentModel.findById(cursor);
+      if (cursorComment) {
+        match.$or = [
+          { createdAt: { $lt: cursorComment.createdAt } },
+          { createdAt: cursorComment.createdAt, _id: { $lt: new Types.ObjectId(cursor) } }
+        ];
+      }
+    }
+
+    const comments = await this.commentModel
+      .find(match)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit + 1);
+
+    const hasMore = comments.length > limit;
+    const itemsToReturn = hasMore ? comments.slice(0, limit) : comments;
+    const nextCursor = hasMore ? itemsToReturn[itemsToReturn.length - 1]._id.toString() : null;
+
+    if (itemsToReturn.length === 0) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
+
+    const authorIds = [...new Set(itemsToReturn.map(c => c.authorId))];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: authorIds } },
+      select: { id: true, fullName: true, avatarUrl: true },
+    });
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    const items = itemsToReturn.map(c => {
+      const author = userMap.get(c.authorId) || { id: c.authorId, fullName: 'Desconhecido', avatarUrl: null };
+      return {
+        id: c._id.toString(),
+        content: c.content,
+        createdAt: c.createdAt,
+        author: {
+          id: author.id,
+          name: author.fullName,
+          avatarUrl: author.avatarUrl,
+        },
+      };
+    });
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async getReports(user: { id: string; role: string }, limit: number = 10, cursor?: string) {
+    if (user.role !== 'ADMIN') throw new ForbiddenException('Acesso restrito');
+    
+    const match: any = { status: 'PENDING' };
+    if (cursor && Types.ObjectId.isValid(cursor)) {
+      match._id = { $lt: new Types.ObjectId(cursor) };
+    }
+
+    const reports = await this.reportModel.find(match).sort({ _id: -1 }).limit(limit + 1);
+    
+    const hasMore = reports.length > limit;
+    const itemsToReturn = hasMore ? reports.slice(0, limit) : reports;
+    const nextCursor = hasMore ? itemsToReturn[itemsToReturn.length - 1]._id.toString() : null;
+
+    if (itemsToReturn.length === 0) return { items: [], nextCursor: null, hasMore: false };
+
+    const reporterIds = [...new Set(itemsToReturn.map(r => r.reporterId))];
+    const postIds = [...new Set(itemsToReturn.map(r => r.postId))];
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: reporterIds } },
+      select: { id: true, fullName: true, email: true }
+    });
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    const posts = await this.postModel.find({ _id: { $in: postIds } });
+    const postMap = new Map(posts.map(p => [p._id.toString(), p]));
+
+    const items = itemsToReturn.map(r => {
+      const reporter = userMap.get(r.reporterId);
+      const post = postMap.get(r.postId.toString());
+      return {
+        id: r._id.toString(),
+        postId: r.postId.toString(),
+        reporter: reporter ? { id: reporter.id, name: reporter.fullName, email: reporter.email } : null,
+        reason: r.reason,
+        description: r.description,
+        status: r.status,
+        createdAt: r.createdAt,
+        postPreview: post ? { content: post.content, imageUrl: post.imageUrl } : null,
+      };
+    });
+
+    return { items, nextCursor, hasMore };
+  }
+
+  async resolveReport(reportId: string, user: { id: string; role: string }) {
+    if (user.role !== 'ADMIN') throw new ForbiddenException('Acesso restrito');
+    const report = await this.reportModel.findById(reportId);
+    if (!report) throw new NotFoundException('Denúncia não encontrada');
+
+    try {
+      await this.deletePost(report.postId.toString(), user);
+    } catch (e) {
+      // Ignorar se já foi excluído
+    }
+
+    await this.reportModel.updateMany(
+      { postId: report.postId, status: 'PENDING' },
+      { $set: { status: 'RESOLVED', resolvedBy: user.id, resolvedAt: new Date() } }
+    );
+
+    return { success: true };
+  }
+
+  async discardReport(reportId: string, user: { id: string; role: string }) {
+    if (user.role !== 'ADMIN') throw new ForbiddenException('Acesso restrito');
+    const report = await this.reportModel.findById(reportId);
+    if (!report) throw new NotFoundException('Denúncia não encontrada');
+
+    report.status = 'DISMISSED';
+    report.resolvedBy = user.id;
+    report.resolvedAt = new Date();
+    await report.save();
+
+    return { success: true };
   }
 }

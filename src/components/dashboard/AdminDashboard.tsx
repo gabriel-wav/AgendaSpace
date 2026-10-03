@@ -6,6 +6,8 @@ import { Building2, Calendar, DollarSign, Users, Plus, TrendingUp } from 'lucide
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
 import { fetchAdminStats } from '@/lib/dashboard.api';
+import { getAbsoluteImageUrl } from '@/lib/api';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -161,27 +163,42 @@ export function AdminDashboard() {
                 </div>
               ) : recentBookings.length > 0 ? (
                 <div className="space-y-4">
-                  {recentBookings.map((booking) => (
-                    <div key={booking.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex-1">
-                        <p className="font-medium">{booking.space?.name || booking.spaces?.name || 'Espaço'}</p>
-                        <p className="text-sm text-muted-foreground">{booking.user?.fullName || booking.profiles?.full_name || 'Usuário'}</p>
+                  {recentBookings.map((booking) => {
+                    const spaceObj = booking.space || booking.spaces;
+                    const img = spaceObj?.images?.[0]?.url || spaceObj?.imageUrl || spaceObj?.image_url;
+
+                    return (
+                      <div key={booking.id} className="flex items-center justify-between p-3 border rounded-lg gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-12 h-12 shrink-0 rounded-md overflow-hidden border">
+                            <SpaceImage
+                              src={img}
+                              alt={spaceObj?.name || 'Espaço'}
+                              containerClassName="w-full h-full bg-muted flex items-center justify-center"
+                              iconClassName="h-6 w-6 text-muted-foreground"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{spaceObj?.name || 'Espaço'}</p>
+                            <p className="text-sm text-muted-foreground truncate">{booking.user?.fullName || booking.profiles?.full_name || 'Usuário'}</p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-medium">
+                            {format(new Date(booking.startDatetime || booking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(booking.endDatetime || booking.end_datetime), "HH:mm", { locale: ptBR })}
+                          </p>
+                          <Badge 
+                            variant={String(booking.status).toUpperCase() === 'CONFIRMED' ? 'default' : String(booking.status).toUpperCase() === 'PENDING' ? 'secondary' : 'outline'}
+                            className="text-xs"
+                          >
+                            {String(booking.status).toUpperCase() === 'CONFIRMED' ? 'Confirmado' : 
+                             String(booking.status).toUpperCase() === 'PENDING' ? 'Pendente' : 
+                             String(booking.status).toUpperCase() === 'COMPLETED' ? 'Realizado' : 'Cancelado'}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">
-                          {format(new Date(booking.startDatetime || booking.start_datetime), "HH:mm", { locale: ptBR })} - {format(new Date(booking.endDatetime || booking.end_datetime), "HH:mm", { locale: ptBR })}
-                        </p>
-                        <Badge 
-                          variant={String(booking.status).toUpperCase() === 'CONFIRMED' ? 'default' : String(booking.status).toUpperCase() === 'PENDING' ? 'secondary' : 'outline'}
-                          className="text-xs"
-                        >
-                          {String(booking.status).toUpperCase() === 'CONFIRMED' ? 'Confirmado' : 
-                           String(booking.status).toUpperCase() === 'PENDING' ? 'Pendente' : 
-                           String(booking.status).toUpperCase() === 'COMPLETED' ? 'Realizado' : 'Cancelado'}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
@@ -254,10 +271,12 @@ export function AdminDashboard() {
                   Ver Agenda
                 </Button>
               </Link>
-              <Button variant="outline" className="h-20 flex-col gap-2">
-                <Users className="h-6 w-6" />
-                Gerenciar Usuários
-              </Button>
+              <Link to="/admin/users">
+                <Button variant="outline" className="h-20 flex-col gap-2 w-full">
+                  <Users className="h-6 w-6" />
+                  Gerenciar Usuários
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

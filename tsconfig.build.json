@@ -30,7 +30,8 @@
     "src/feed/**/*.ts",
     "src/prisma/**/*.ts",
     "src/users/**/*.ts",
-    "src/upload/**/*.ts"
+    "src/upload/**/*.ts",
+    "src/dashboard/**/*.ts"
   ],
   "exclude": [
     "node_modules",

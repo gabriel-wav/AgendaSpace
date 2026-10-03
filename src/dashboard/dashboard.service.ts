@@ -51,7 +51,19 @@ export class DashboardService {
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
-        space: { select: { name: true } },
+        space: {
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            resources: true,
+            imageUrl: true,
+            images: {
+              orderBy: { position: 'asc' },
+              select: { url: true, position: true }
+            }
+          }
+        },
         user: { select: { fullName: true } }
       }
     });
@@ -113,7 +125,19 @@ export class DashboardService {
         status: { in: ['PENDING', 'CONFIRMED'] }
       },
       include: {
-        space: { select: { name: true, capacity: true, resources: true } },
+        space: {
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            resources: true,
+            imageUrl: true,
+            images: {
+              orderBy: { position: 'asc' },
+              select: { url: true, position: true }
+            }
+          }
+        },
         payment: { select: { id: true, status: true } }
       },
       orderBy: { startDatetime: 'asc' },

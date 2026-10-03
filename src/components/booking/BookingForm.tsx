@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { createBooking, fetchSpaceBookings, SpaceBookingSlot, Booking } from '@/lib/bookings.api';
 import { formatBRL } from '@/lib/utils';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
 
 export interface BookingSpace {
   id: string;
@@ -298,17 +299,14 @@ export function BookingForm({ space, onSuccess, onCancel }: BookingFormProps) {
       {/* Space Overview Card */}
       <div className="flex flex-col sm:flex-row gap-3 p-3.5 bg-muted/40 border border-border/60 rounded-xl items-start sm:items-center justify-between">
         <div className="flex items-center gap-3">
-          {imageUrl ? (
-            <img
+          <div className="h-12 w-12 rounded-lg overflow-hidden border border-border/50 shrink-0">
+            <SpaceImage
               src={imageUrl}
               alt={space.name}
-              className="h-12 w-12 rounded-lg object-cover border border-border/50 shrink-0"
+              containerClassName="w-full h-full bg-primary/10 flex items-center justify-center"
+              iconClassName="h-6 w-6 text-primary"
             />
-          ) : (
-            <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-              <MapPin className="h-6 w-6" />
-            </div>
-          )}
+          </div>
           <div>
             <h4 className="font-semibold text-foreground text-base leading-tight">
               {space.name}

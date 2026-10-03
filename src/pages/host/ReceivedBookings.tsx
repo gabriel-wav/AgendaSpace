@@ -11,6 +11,8 @@ import { Calendar, Clock, DollarSign, Search, CheckCircle2, XCircle, Building2, 
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchHostBookings, updateBookingStatus, Booking, BookingStatus } from '@/lib/bookings.api';
+import { getAbsoluteImageUrl } from '@/lib/api';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
 
 /**
  * Página "Reservas Recebidas" (/host/bookings)
@@ -107,6 +109,25 @@ export default function ReceivedBookings() {
       booking.status.toUpperCase() === statusFilter.toUpperCase();
 
     return matchesSearch && matchesStatus;
+  });
+
+  const groupedBookings = filteredBookings.reduce((acc, booking) => {
+    const spaceId = booking.space?.id || 'deleted-space';
+    if (!acc[spaceId]) {
+      acc[spaceId] = {
+        space: booking.space,
+        bookings: []
+      };
+    }
+    acc[spaceId].bookings.push(booking);
+    return acc;
+  }, {} as Record<string, { space: any, bookings: Booking[] }>);
+
+  const sortedGroups = Object.values(groupedBookings).sort((a, b) => {
+    const pendingA = a.bookings.filter(bk => bk.status === 'PENDING').length;
+    const pendingB = b.bookings.filter(bk => bk.status === 'PENDING').length;
+    if (pendingA !== pendingB) return pendingB - pendingA;
+    return (a.space?.name || '').localeCompare(b.space?.name || '');
   });
 
   const pendingCount = bookings.filter((b) => b.status === 'PENDING').length;
@@ -213,118 +234,156 @@ export default function ReceivedBookings() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {filteredBookings.map((booking) => {
-              const start = new Date(booking.startDatetime);
-              const end = new Date(booking.endDatetime);
-              const isPending = booking.status.toUpperCase() === 'PENDING';
-              const isConfirmed = booking.status.toUpperCase() === 'CONFIRMED';
-              const isBusy = actionInProgress === booking.id;
+          <div className="space-y-6">
+            {sortedGroups.map((group) => {
+              const space = group.space;
+              const img = space?.images?.[0]?.url || space?.imageUrl || (space as any)?.image_url;
 
               return (
-                <Card key={booking.id} className="overflow-hidden border border-border/70 hover:border-border transition-colors">
-                  <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold text-foreground text-base">
-                          {booking.space?.name || 'Espaço sem nome'}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {getStatusBadge(booking.status)}
-                          {isPending && (
-                            <span className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-100/50 px-2 py-0.5 rounded-full border border-amber-200">
-                              {booking.approvalStatus !== 'APPROVED' ? 'Aguardando Aprovação' : 'Aguardando Pagamento'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1.5 font-medium text-foreground">
-                          <User className="h-3.5 w-3.5 text-muted-foreground" />
-                          {booking.user?.fullName || 'Cliente'} ({booking.user?.email})
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {format(start, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5" />
-                          {format(start, 'HH:mm')} - {format(end, 'HH:mm')}
-                        </span>
-                        <span className="flex items-center gap-1.5 font-medium text-foreground">
-                          <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                          {Number(booking.totalPrice).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
-                        </span>
-                      </div>
-
-                      {booking.notes && (
-                        <p className="text-xs text-muted-foreground/80 italic">
-                          "{booking.notes}"
-                        </p>
-                      )}
+                <Card key={space?.id || 'deleted'} className="overflow-hidden border border-border/70">
+                  {/* Cabeçalho do Card (Espaço) */}
+                  <div className="bg-muted/40 p-4 border-b border-border/70 flex items-center gap-4">
+                    <div className="w-12 h-12 shrink-0 rounded overflow-hidden border">
+                      <SpaceImage
+                        src={img}
+                        alt={space?.name || 'Espaço'}
+                        containerClassName="w-full h-full bg-muted flex items-center justify-center"
+                        iconClassName="h-5 w-5 text-muted-foreground"
+                      />
                     </div>
-
-                    {/* Ações do Anfitrião */}
-                    <div className="flex items-center gap-2 self-end md:self-center shrink-0">
-                      {isPending && (
-                        <>
-                          {booking.approvalStatus !== 'APPROVED' && (
-                            <Button
-                              size="sm"
-                              disabled={isBusy}
-                              onClick={() => handleUpdateStatus(booking.id, { approvalStatus: 'APPROVED' })}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Aprovar
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isBusy}
-                            onClick={() => handleUpdateStatus(booking.id, { approvalStatus: 'REJECTED' })}
-                            className="text-destructive hover:bg-destructive/10 gap-1.5 text-xs h-8"
-                          >
-                            <Ban className="h-3.5 w-3.5" />
-                            Recusar
-                          </Button>
-                        </>
-                      )}
-
-                      {isConfirmed && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={isBusy}
-                            onClick={() => handleUpdateStatus(booking.id, { status: 'COMPLETED' })}
-                            className="gap-1.5 text-xs h-8"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Concluir
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={isBusy}
-                            onClick={() => handleUpdateStatus(booking.id, 'CANCELLED')}
-                            className="text-destructive hover:bg-destructive/10 text-xs h-8"
-                          >
-                            Cancelar
-                          </Button>
-                        </>
-                      )}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-base text-foreground truncate">
+                        {space?.name || 'Espaço Excluído'}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {group.bookings.length} {group.bookings.length === 1 ? 'reserva' : 'reservas'}
+                      </p>
                     </div>
+                  </div>
+
+                  {/* Lista de Reservas do Espaço */}
+                  <div className="divide-y divide-border/60">
+                    {group.bookings
+                      .sort((a, b) => new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime())
+                      .map((booking) => {
+                        const start = new Date(booking.startDatetime);
+                        const end = new Date(booking.endDatetime);
+                        const isPending = booking.status.toUpperCase() === 'PENDING';
+                        const isConfirmed = booking.status.toUpperCase() === 'CONFIRMED';
+                        const isBusy = actionInProgress === booking.id;
+                        
+                        let cancelLabel = null;
+                        if (booking.status === 'CANCELLED' && booking.cancellationReason === 'UNPAID_AT_START') {
+                          cancelLabel = 'Cancelada automaticamente por falta de pagamento';
+                        }
+
+                        return (
+                          <div key={booking.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-muted/10 transition-colors">
+                            <div className="space-y-2 flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                {getStatusBadge(booking.status)}
+                                {isPending && (
+                                  <span className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-100/50 px-2 py-0.5 rounded-full border border-amber-200">
+                                    {booking.approvalStatus !== 'APPROVED' ? 'Aguardando Aprovação' : 'Aguardando Pagamento'}
+                                  </span>
+                                )}
+                                {cancelLabel && (
+                                  <span className="text-[10px] sm:text-xs font-medium text-destructive bg-destructive/10 px-2 py-0.5 rounded-full border border-destructive/20">
+                                    {cancelLabel}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+                                  {booking.user?.fullName || 'Cliente'} ({booking.user?.email})
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <Calendar className="h-3.5 w-3.5" />
+                                  {format(start, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  {format(start, 'HH:mm')} - {format(end, 'HH:mm')}
+                                </span>
+                                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                                  <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                                  {Number(booking.totalPrice).toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </span>
+                              </div>
+
+                              {booking.notes && (
+                                <p className="text-xs text-muted-foreground/80 italic">
+                                  "{booking.notes}"
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Ações do Anfitrião */}
+                            <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                              {isPending && (
+                                <>
+                                  {booking.approvalStatus !== 'APPROVED' && (
+                                    <Button
+                                      size="sm"
+                                      disabled={isBusy}
+                                      onClick={() => handleUpdateStatus(booking.id, { approvalStatus: 'APPROVED' })}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8"
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                      Aprovar
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isBusy}
+                                    onClick={() => handleUpdateStatus(booking.id, { approvalStatus: 'REJECTED' })}
+                                    className="text-destructive hover:bg-destructive/10 gap-1.5 text-xs h-8"
+                                  >
+                                    <Ban className="h-3.5 w-3.5" />
+                                    Recusar
+                                  </Button>
+                                </>
+                              )}
+
+                              {isConfirmed && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={isBusy}
+                                    onClick={() => handleUpdateStatus(booking.id, { status: 'COMPLETED' })}
+                                    className="gap-1.5 text-xs h-8"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    Concluir
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={isBusy}
+                                    onClick={() => handleUpdateStatus(booking.id, { status: 'CANCELLED' })}
+                                    className="text-destructive hover:bg-destructive/10 text-xs h-8"
+                                  >
+                                    Cancelar
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                    })}
                   </div>
                 </Card>
               );
             })}
           </div>
+
         )}
       </div>
     </AppLayout>

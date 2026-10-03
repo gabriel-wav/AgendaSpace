@@ -59,6 +59,10 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas.');
     }
 
+    if ((user as any).isDeleted) {
+      throw new UnauthorizedException('Esta conta foi desativada ou banida da plataforma.');
+    }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
 
     if (!isPasswordValid) {

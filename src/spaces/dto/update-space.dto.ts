@@ -38,6 +38,11 @@ export class UpdateSpaceDto {
   @IsOptional()
   imageUrl?: string;
 
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  images?: string[];
+
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;

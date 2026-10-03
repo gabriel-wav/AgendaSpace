@@ -9,8 +9,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Trash2 } from 'lucide-react';
+import { Trash2, EyeOff, Flag } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -94,9 +95,9 @@ function LikeButton({
 
 // ─── Single comment row ────────────────────────────────────────────────────
 
-function CommentRow({ comment }: { comment: FeedComment }) {
+function CommentRow({ comment, canDelete, onDelete }: { comment: FeedComment; canDelete?: boolean; onDelete?: () => void }) {
   return (
-    <div className="flex gap-2.5">
+    <div className="flex gap-2.5 group/comment">
       <MicroAvatar author={comment.author} size={20} />
       <div className="flex-1 min-w-0">
         <span className="text-xs font-semibold text-foreground mr-1.5">
@@ -106,9 +107,16 @@ function CommentRow({ comment }: { comment: FeedComment }) {
           {comment.content}
         </span>
       </div>
-      <span className="shrink-0 text-[11px] text-muted-foreground/50 self-start pt-0.5">
-        {timeAgo(comment.createdAt)}
-      </span>
+      <div className="flex gap-1.5 items-start pt-0.5">
+        {canDelete && onDelete && (
+          <button onClick={onDelete} className="opacity-0 group-hover/comment:opacity-100 transition-opacity text-destructive hover:text-destructive/80" aria-label="Excluir">
+            <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+          </button>
+        )}
+        <span className="shrink-0 text-[11px] text-muted-foreground/50">
+          {timeAgo(comment.createdAt)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -162,15 +170,17 @@ interface PostCardProps {
   onLike: (postId: string) => void;
   onComment: (postId: string, content: string) => void;
   onDelete?: (postId: string) => void;
+  onDeleteComment?: (postId: string, commentId: string) => void;
+  onHide?: (postId: string) => void;
+  onReport?: (postId: string) => void;
+  onViewAllComments?: (postId: string) => void;
+  currentUser?: any;
 }
 
-export function PostCard({ post, onLike, onComment, onDelete }: PostCardProps) {
-  const [showAllComments, setShowAllComments] = useState(false);
+export function PostCard({ post, onLike, onComment, onDelete, onDeleteComment, onHide, onReport, onViewAllComments, currentUser }: PostCardProps) {
   const [showCommentInput, setShowCommentInput] = useState(false);
 
-  const commentsToShow = showAllComments
-    ? post.recentComments
-    : post.recentComments.slice(0, 2);
+  const commentsToShow = post.recentComments.slice(0, 3);
 
   return (
     <article className="group animate-in-up border-b border-border/60 pb-8 last:border-0">
@@ -190,24 +200,39 @@ export function PostCard({ post, onLike, onComment, onDelete }: PostCardProps) {
         </div>
         <div className="flex items-center gap-2 text-muted-foreground/50">
           <span className="text-[11px]">{timeAgo(post.createdAt)}</span>
-          {onDelete && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:text-foreground"
-                  aria-label="Mais opções"
-                >
-                  <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer" onClick={() => onDelete(post.id)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  <span>Excluir publicação</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:text-foreground"
+                aria-label="Mais opções"
+              >
+                <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {onHide && (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => onHide(post.id)}>
+                  <EyeOff className="mr-2 h-4 w-4" />
+                  <span>Ocultar publicação</span>
                 </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+              )}
+              {onReport && (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => onReport(post.id)}>
+                  <Flag className="mr-2 h-4 w-4" />
+                  <span>Denunciar publicação</span>
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer" onClick={() => onDelete(post.id)}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    <span>Excluir publicação</span>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -255,9 +280,9 @@ export function PostCard({ post, onLike, onComment, onDelete }: PostCardProps) {
       {(commentsToShow.length > 0 || showCommentInput) && (
         <div className="mt-3 space-y-2.5">
           {/* "Ver todos os comentários" link */}
-          {!showAllComments && post.totalComments > 2 && (
+          {post.totalComments > commentsToShow.length && onViewAllComments && (
             <button
-              onClick={() => setShowAllComments(true)}
+              onClick={() => onViewAllComments(post.id)}
               className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-150"
             >
               Ver todos os {post.totalComments} comentários
@@ -265,7 +290,12 @@ export function PostCard({ post, onLike, onComment, onDelete }: PostCardProps) {
           )}
 
           {commentsToShow.map((comment) => (
-            <CommentRow key={comment.id} comment={comment} />
+            <CommentRow 
+              key={comment.id} 
+              comment={comment} 
+              canDelete={currentUser?.role === 'ADMIN' || currentUser?.id === comment.author.id}
+              onDelete={onDeleteComment ? () => onDeleteComment(post.id, comment.id) : undefined}
+            />
           ))}
 
           {/* Inline comment input */}

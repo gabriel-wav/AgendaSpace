@@ -20,6 +20,8 @@ export interface Booking {
   approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
   approvedAt?: string | null;
   approvedById?: string | null;
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
   createdAt: string;
   updatedAt: string;
   space?: {
@@ -30,6 +32,7 @@ export interface Booking {
     imageUrl?: string | null;
     capacity?: number;
     resources?: string[];
+    images?: { id: string; url: string; position: number }[];
     createdById?: string;
     createdBy?: { id: string; fullName: string } | null;
   };
@@ -37,6 +40,7 @@ export interface Booking {
     id: string;
     fullName: string;
     email: string;
+    avatarUrl?: string | null;
   };
   payment?: {
     id?: string;

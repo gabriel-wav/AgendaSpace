@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -63,5 +64,32 @@ export class UsersController {
     }
 
     return this.usersService.update(id, updateUserDto);
+  }
+
+  /**
+   * DELETE /profiles/:id
+   * Baniu/soft-delete um usuário. Apenas ADMIN.
+   */
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser('id') adminId: string,
+  ) {
+    return this.usersService.banUser(id, adminId);
+  }
+
+  /**
+   * PATCH /profiles/:id/restore
+   * Desbanir / reativar usuário. Apenas ADMIN.
+   */
+  @Patch(':id/restore')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  async restore(
+    @Param('id') id: string,
+  ) {
+    return this.usersService.unbanUser(id);
   }
 }

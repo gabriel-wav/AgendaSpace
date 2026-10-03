@@ -173,8 +173,16 @@ export class BookingsService {
     return this.prisma.booking.findMany({
       where: { userId },
       include: {
-        space: true,
+        space: {
+          include: {
+            images: { orderBy: { position: 'asc' } },
+            createdBy: { select: { id: true, fullName: true, email: true } },
+          },
+        },
         user: {
+          select: { id: true, fullName: true, email: true, avatarUrl: true },
+        },
+        approvedBy: {
           select: { id: true, fullName: true, email: true },
         },
         payment: true,
@@ -193,8 +201,16 @@ export class BookingsService {
         space: { createdById: userId },
       },
       include: {
-        space: true,
+        space: {
+          include: {
+            images: { orderBy: { position: 'asc' } },
+            createdBy: { select: { id: true, fullName: true, email: true } },
+          },
+        },
         user: {
+          select: { id: true, fullName: true, email: true, avatarUrl: true },
+        },
+        approvedBy: {
           select: { id: true, fullName: true, email: true },
         },
         payment: true,
@@ -218,8 +234,16 @@ export class BookingsService {
     if (role === 'ADMIN') {
       return this.prisma.booking.findMany({
         include: {
-          space: true,
+          space: {
+            include: {
+              images: { orderBy: { position: 'asc' } },
+              createdBy: { select: { id: true, fullName: true, email: true } },
+            },
+          },
           user: {
+            select: { id: true, fullName: true, email: true, avatarUrl: true },
+          },
+          approvedBy: {
             select: { id: true, fullName: true, email: true },
           },
           payment: true,
@@ -280,13 +304,22 @@ export class BookingsService {
     const booking = await this.prisma.booking.findUnique({
       where: { id },
       include: {
-        space: true,
+        space: {
+          include: {
+            images: { orderBy: { position: 'asc' } },
+            createdBy: { select: { id: true, fullName: true, email: true } },
+          },
+        },
         user: {
           select: {
             id: true,
             fullName: true,
             email: true,
+            avatarUrl: true,
           },
+        },
+        approvedBy: {
+          select: { id: true, fullName: true, email: true },
         },
         payment: true,
         contract: true,
@@ -360,7 +393,7 @@ export class BookingsService {
       }
 
       if (dto.approvalStatus === 'APPROVED') {
-        if (booking.startDatetime.getTime() < Date.now()) {
+        if (booking.startDatetime.getTime() <= Date.now()) {
           throw new BadRequestException('Não é possível aprovar uma reserva após o início do período.');
         }
 
@@ -456,7 +489,13 @@ export class BookingsService {
 
       return this.prisma.booking.update({
         where: { id },
-        data: { status: targetStatus as any },
+        data: {
+          status: targetStatus as any,
+          cancelledAt: targetStatus === 'CANCELLED' ? new Date() : undefined,
+          cancellationReason: targetStatus === 'CANCELLED'
+            ? (isClient && !isOwnerOfSpace && !isAdmin ? 'CANCELLED_BY_CLIENT' : isOwnerOfSpace ? 'CANCELLED_BY_HOST' : 'CANCELLED_BY_ADMIN')
+            : undefined,
+        },
       });
     }
 
@@ -490,8 +529,8 @@ export class BookingsService {
       throw new BadRequestException('Apenas reservas pendentes podem ser pagas.');
     }
 
-    if (booking.startDatetime.getTime() < Date.now()) {
-      throw new BadRequestException('Não é possível pagar uma reserva após o início do período.');
+    if (booking.startDatetime.getTime() <= Date.now()) {
+      throw new BadRequestException('Não é possível pagar uma reserva no horário ou após o início do período.');
     }
 
     // Usar transação atômica

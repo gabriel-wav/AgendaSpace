@@ -100,3 +100,56 @@ export async function deleteComment(commentId: string): Promise<{ success: boole
   const { data } = await api.delete(`/feed/comments/${commentId}`);
   return data;
 }
+
+export async function hidePost(postId: string): Promise<{ success: boolean }> {
+  const { data } = await api.post(`/feed/posts/${postId}/hide`);
+  return data;
+}
+
+export async function unhidePost(postId: string): Promise<{ success: boolean }> {
+  const { data } = await api.post(`/feed/posts/${postId}/unhide`);
+  return data;
+}
+
+export async function reportPost(postId: string, reason: string): Promise<{ success: boolean }> {
+  const { data } = await api.post(`/feed/posts/${postId}/report`, { reason });
+  return data;
+}
+
+export async function getReports(cursor?: string): Promise<any> {
+  const { data } = await api.get('/feed/reports', { params: { cursor } });
+  return data;
+}
+
+export async function resolveReport(reportId: string): Promise<{ success: boolean }> {
+  const { data } = await api.post(`/feed/reports/${reportId}/resolve`);
+  return data;
+}
+
+export async function discardReport(reportId: string): Promise<{ success: boolean }> {
+  const { data } = await api.post(`/feed/reports/${reportId}/discard`);
+  return data;
+}
+
+export interface EnrichedComment {
+  id: string;
+  content: string;
+  createdAt: string;
+  author: {
+    id: string;
+    name: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface PaginatedComments {
+  items: EnrichedComment[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export async function fetchPostComments(postId: string, cursor?: string, limit: number = 10): Promise<PaginatedComments> {
+  const url = cursor ? `/feed/posts/${postId}/comments?cursor=${cursor}&limit=${limit}` : `/feed/posts/${postId}/comments?limit=${limit}`;
+  const { data } = await api.get<PaginatedComments>(url);
+  return data;
+}

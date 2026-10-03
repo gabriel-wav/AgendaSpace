@@ -34,11 +34,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         fullName: true,
         role: true,
         avatarUrl: true,
+        isDeleted: true,
       },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('Usuário não encontrado ou token inválido');
+    if (!user || user.isDeleted) {
+      throw new UnauthorizedException('Usuário não encontrado, desativado ou banido');
     }
 
     return user;

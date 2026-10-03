@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog } from '@/components/ui/dialog';
-import { Calendar, Clock, MapPin, Eye, X, Plus, DollarSign } from 'lucide-react';
+import { Calendar, Clock, MapPin, Eye, X, Plus, DollarSign, Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format, isPast, isToday, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -19,6 +19,8 @@ import {
   Booking,
 } from '@/lib/bookings.api';
 import { formatBRL } from '@/lib/utils';
+import { getAbsoluteImageUrl } from '@/lib/api';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,9 @@ function getStatusLabel(status: string): string {
 
 /** Inline sub-label for PENDING bookings showing what is still missing */
 function pendingSubLabel(booking: Booking): string | null {
+  if (booking.status.toUpperCase() === 'CANCELLED' && booking.cancellationReason === 'UNPAID_AT_START') {
+    return 'Cancelada automaticamente por falta de pagamento';
+  }
   if (booking.status.toUpperCase() !== 'PENDING') return null;
   const ap = (booking.approvalStatus || 'PENDING').toUpperCase();
   const paid = !!booking.payment && booking.payment.status === 'SUCCESS';
@@ -61,6 +66,10 @@ function canPay(booking: Booking): boolean {
   if (paid) return false;
   if (st !== 'PENDING') return false;
   if (ap === 'REJECTED') return false;
+
+  const isExpired = new Date(booking.startDatetime).getTime() <= Date.now();
+  if (isExpired) return false;
+
   return true;
 }
 
@@ -85,67 +94,79 @@ interface BookingRowProps {
 
 function BookingRow({ booking, onDetails, onPay, onCancel }: BookingRowProps) {
   const sub = pendingSubLabel(booking);
+  const img = booking.space?.images?.[0]?.url || booking.space?.imageUrl || (booking.space as any)?.image_url;
 
   return (
     <Card className="mb-3">
       <CardContent className="pt-5 pb-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          {/* Left: space info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <h3 className="font-medium text-foreground truncate">{booking.space?.name ?? '—'}</h3>
-              <Badge variant={getStatusVariant(booking.status)}>
-                {getStatusLabel(booking.status)}
-              </Badge>
-              {sub && (
-                <span className="text-[10px] sm:text-xs font-medium text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-full border border-amber-200">
-                  {sub}
-                </span>
-              )}
+          {/* Left: space info with thumbnail */}
+          <div className="flex-1 min-w-0 flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <div className="w-full sm:w-24 h-24 shrink-0 rounded-md overflow-hidden border">
+              <SpaceImage
+                src={img}
+                alt={booking.space?.name || 'Espaço'}
+                containerClassName="w-full h-full bg-muted flex items-center justify-center"
+                iconClassName="h-8 w-8 text-muted-foreground"
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span>{format(new Date(booking.startDatetime), 'dd/MM/yyyy', { locale: ptBR })}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span>
-                  {format(new Date(booking.startDatetime), 'HH:mm')}–
-                  {format(new Date(booking.endDatetime), 'HH:mm')}
-                </span>
-              </div>
-              {booking.space?.capacity && (
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
-                  <span>{booking.space.capacity} pessoas</span>
-                </div>
-              )}
-              <div className="font-medium text-foreground">
-                {formatBRL(booking.totalPrice)}
-              </div>
-            </div>
-
-            {/* Resources chips (truncated) */}
-            {booking.space?.resources && booking.space.resources.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {booking.space.resources.slice(0, 4).map((r) => (
-                  <Badge key={r} variant="outline" className="text-xs">{r}</Badge>
-                ))}
-                {booking.space.resources.length > 4 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{booking.space.resources.length - 4}
-                  </Badge>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <h3 className="font-medium text-foreground truncate">{booking.space?.name ?? '—'}</h3>
+                <Badge variant={getStatusVariant(booking.status)}>
+                  {getStatusLabel(booking.status)}
+                </Badge>
+                {sub && (
+                  <span className="text-[10px] sm:text-xs font-medium text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-full border border-amber-200">
+                    {sub}
+                  </span>
                 )}
               </div>
-            )}
 
-            {booking.notes && (
-              <p className="text-xs text-muted-foreground border-l-2 border-primary/30 pl-2 mt-2 line-clamp-1">
-                {booking.notes}
-              </p>
-            )}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>{format(new Date(booking.startDatetime), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>
+                    {format(new Date(booking.startDatetime), 'HH:mm')}–
+                    {format(new Date(booking.endDatetime), 'HH:mm')}
+                  </span>
+                </div>
+                {booking.space?.capacity && (
+                  <div className="flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span>{booking.space.capacity} pessoas</span>
+                  </div>
+                )}
+                <div className="font-medium text-foreground">
+                  {formatBRL(booking.totalPrice)}
+                </div>
+              </div>
+
+              {/* Resources chips (truncated) */}
+              {booking.space?.resources && booking.space.resources.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {booking.space.resources.slice(0, 4).map((r) => (
+                    <Badge key={r} variant="outline" className="text-xs">{r}</Badge>
+                  ))}
+                  {booking.space.resources.length > 4 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{booking.space.resources.length - 4}
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              {booking.notes && (
+                <p className="text-xs text-muted-foreground border-l-2 border-primary/30 pl-2 mt-2 line-clamp-1">
+                  {booking.notes}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Right: actions */}
@@ -253,7 +274,7 @@ export default function MyBookings() {
     } catch (error: any) {
       toast({
         title: 'Erro ao cancelar reserva',
-        description: error.message || 'Não foi possível cancelar.',
+        description: error.response?.data?.message || error.message || 'Não foi possível cancelar.',
         variant: 'destructive',
       });
     }

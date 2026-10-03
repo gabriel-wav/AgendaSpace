@@ -5,6 +5,8 @@ import { FeedService } from './feed.service';
 import { Post, PostSchema } from './schemas/post.schema';
 import { Comment, CommentSchema } from './schemas/comment.schema';
 import { Like, LikeSchema } from './schemas/like.schema';
+import { Report, ReportSchema } from './schemas/report.schema';
+import { HiddenPost, HiddenPostSchema } from './schemas/hidden-post.schema';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -13,6 +15,8 @@ import { PrismaModule } from '../prisma/prisma.module';
       { name: Post.name, schema: PostSchema },
       { name: Comment.name, schema: CommentSchema },
       { name: Like.name, schema: LikeSchema },
+      { name: Report.name, schema: ReportSchema },
+      { name: HiddenPost.name, schema: HiddenPostSchema },
     ]),
     PrismaModule,
   ],

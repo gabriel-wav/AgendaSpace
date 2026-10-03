@@ -1,12 +1,17 @@
-import React, { useState, useRef } from 'react';
-import { ImagePlus, X, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ImagePlus, Camera as CameraIcon, X, Loader2, Check } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { getAbsoluteImageUrl } from '@/lib/api';
 import { Link } from 'react-router-dom';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
+import { fetchSpaces } from '@/lib/spaces.api';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
 
 interface NewPostInputProps {
-  spaces: { id: string; name: string }[];
+  spaces: any[];
   onSubmit: (data: { spaceId: string; content: string; imageFile: File }) => Promise<void>;
 }
 
@@ -23,6 +28,93 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [showDesktopCamera, setShowDesktopCamera] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+
+  const [openSpace, setOpenSpace] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [spaceOptions, setSpaceOptions] = useState(spaces);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    setSpaceOptions(spaces);
+    if (!spaceId && spaces.length > 0) {
+      setSpaceId(spaces[0].id);
+    }
+  }, [spaces]);
+
+  useEffect(() => {
+    const delay = setTimeout(async () => {
+      if (searchQuery) {
+        setIsSearching(true);
+        try {
+          const res = await fetchSpaces(true, searchQuery);
+          setSpaceOptions(res);
+        } catch (e) {
+          // ignore
+        } finally {
+          setIsSearching(false);
+        }
+      } else {
+        setSpaceOptions(spaces);
+      }
+    }, 300);
+    return () => clearTimeout(delay);
+  }, [searchQuery, spaces]);
+
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setShowDesktopCamera(false);
+  };
+
+  useEffect(() => {
+    return () => stopCamera();
+  }, []);
+
+  const handleStartDesktopCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError('Câmera não suportada neste navegador.');
+      return;
+    }
+    setCameraError('');
+    setShowDesktopCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (e) {
+      setCameraError('Permissão negada ou câmera ocupada.');
+    }
+  };
+
+  const handleCaptureDesktop = () => {
+    if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], 'capture.jpg', { type: 'image/jpeg' });
+            setImageFile(file);
+            setImagePreview(URL.createObjectURL(blob));
+            stopCamera();
+          }
+        }, 'image/jpeg', 0.9);
+      }
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -120,7 +212,6 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
       {/* Expanded — full form */}
       {expanded && (
         <div className="mt-3 space-y-3 animate-in-up">
-          {/* Image preview / upload zone */}
           {imagePreview ? (
             <div className="relative rounded-md overflow-hidden bg-muted">
               <img
@@ -136,24 +227,62 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className={cn(
-                'w-full rounded-md border border-dashed border-border/60 py-6',
-                'flex flex-col items-center gap-1.5 text-muted-foreground/50',
-                'hover:border-border hover:text-muted-foreground transition-all duration-150',
+          ) : showDesktopCamera ? (
+            <div className="relative rounded-md overflow-hidden bg-black flex flex-col items-center p-4">
+              {cameraError ? (
+                <div className="text-center text-sm text-red-400 py-6">
+                  {cameraError}
+                  <button onClick={stopCamera} className="mt-2 block mx-auto text-xs underline text-white">Fechar</button>
+                </div>
+              ) : (
+                <>
+                  <video ref={videoRef} autoPlay playsInline className="w-full max-h-72 object-cover bg-black" />
+                  <div className="mt-4 flex gap-4">
+                    <button onClick={stopCamera} className="px-3 py-1.5 text-xs text-white bg-white/20 rounded hover:bg-white/30">Cancelar</button>
+                    <button onClick={handleCaptureDesktop} className="px-4 py-1.5 text-xs text-black font-semibold bg-white rounded-full hover:bg-gray-200">Capturar</button>
+                  </div>
+                </>
               )}
-            >
-              <ImagePlus className="h-5 w-5" strokeWidth={1.5} />
-              <span className="text-xs">Clique para adicionar uma foto (Máx 5MB)</span>
-            </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={cn(
+                  'rounded-md border border-dashed border-border/60 py-6',
+                  'flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50',
+                  'hover:border-border hover:text-muted-foreground transition-all duration-150',
+                )}
+              >
+                <ImagePlus className="h-5 w-5" strokeWidth={1.5} />
+                <span className="text-xs">Enviar imagem</span>
+              </button>
+              <button
+                onClick={() => isMobile ? cameraInputRef.current?.click() : handleStartDesktopCamera()}
+                className={cn(
+                  'rounded-md border border-dashed border-border/60 py-6',
+                  'flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50',
+                  'hover:border-border hover:text-muted-foreground transition-all duration-150',
+                )}
+              >
+                <CameraIcon className="h-5 w-5" strokeWidth={1.5} />
+                <span className="text-xs">Usar câmera</span>
+              </button>
+            </div>
           )}
 
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -173,21 +302,53 @@ export function NewPostInput({ spaces, onSubmit }: NewPostInputProps) {
 
           {/* Space selector + actions row */}
           <div className="flex items-center justify-between pt-1 border-t border-border/40">
-            <select
-              value={spaceId}
-              onChange={(e) => setSpaceId(e.target.value)}
-              className={cn(
-                'bg-transparent text-xs text-muted-foreground',
-                'border-0 outline-none ring-0 cursor-pointer',
-                'hover:text-foreground transition-colors duration-150',
-              )}
-            >
-              {spaces.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <Popover open={openSpace} onOpenChange={setOpenSpace}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-2 max-w-[200px] text-xs font-medium text-muted-foreground hover:text-foreground">
+                  {spaceId ? (() => {
+                    const selected = spaceOptions.find(s => s.id === spaceId) || spaces.find(s => s.id === spaceId);
+                    if (!selected) return 'Selecionar espaço...';
+                    return (
+                      <>
+                        <SpaceImage
+                          src={selected.imageUrl}
+                          alt=""
+                          containerClassName="w-4 h-4 rounded-sm bg-muted flex items-center justify-center shrink-0"
+                          iconClassName="h-2.5 w-2.5 text-muted-foreground"
+                          className="w-4 h-4 rounded-sm object-cover shrink-0"
+                        />
+                        <span className="truncate">{selected.name}</span>
+                      </>
+                    );
+                  })() : 'Selecionar espaço...'}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput placeholder="Buscar espaço..." value={searchQuery} onValueChange={setSearchQuery} />
+                  <CommandList>
+                    <CommandEmpty>{isSearching ? 'Buscando...' : 'Nenhum espaço encontrado.'}</CommandEmpty>
+                    <CommandGroup>
+                      {spaceOptions.map(s => (
+                        <CommandItem key={s.id} value={s.id} onSelect={() => { setSpaceId(s.id); setOpenSpace(false); }}>
+                          <div className="flex items-center gap-2 w-full">
+                            <SpaceImage
+                              src={s.imageUrl}
+                              alt=""
+                              containerClassName="w-6 h-6 rounded-sm bg-muted flex items-center justify-center shrink-0"
+                              iconClassName="h-3.5 w-3.5 text-muted-foreground"
+                              className="w-6 h-6 rounded-sm object-cover shrink-0"
+                            />
+                            <span className="flex-1 truncate">{s.name}</span>
+                            {s.id === spaceId && <Check className="h-4 w-4 shrink-0" />}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
             <div className="flex items-center gap-2">
               <button

@@ -18,7 +18,10 @@ export interface Space {
   pricePerHour: string;    // Decimal vindo do Prisma/MySQL como string
   resources: string[];
   imageUrl: string | null;
+  images?: { id: string; url: string; position: number }[];
   isActive: boolean;
+  isDeleted?: boolean;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   createdBy?: {
@@ -35,6 +38,7 @@ export interface CreateSpacePayload {
   pricePerHour: number;
   resources?: string[];
   imageUrl?: string;
+  images?: string[];
   isActive?: boolean;
 }
 
@@ -46,9 +50,9 @@ export type UpdateSpacePayload = Partial<CreateSpacePayload>;
  * GET /spaces
  * Retorna a lista de espaços. O interceptor do axios injeta o Bearer token.
  */
-export async function fetchSpaces(activeOnly = true): Promise<Space[]> {
+export async function fetchSpaces(activeOnly = true, q?: string, includeDeleted = false): Promise<Space[]> {
   const { data } = await api.get<Space[]>('/spaces', {
-    params: { activeOnly },
+    params: { activeOnly, q, includeDeleted },
   });
   return data;
 }

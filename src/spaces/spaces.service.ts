@@ -20,6 +20,9 @@ export class SpacesService {
    * Cria um novo espaço associando-o ao usuário criador autenticado (created_by)
    */
   async create(userId: string, dto: CreateSpaceDto) {
+    const imagesArray = dto.images || [];
+    const derivedImageUrl = imagesArray.length > 0 ? imagesArray[0] : dto.imageUrl;
+
     return this.prisma.space.create({
       data: {
         name: dto.name,
@@ -27,9 +30,12 @@ export class SpacesService {
         capacity: dto.capacity,
         pricePerHour: dto.pricePerHour,
         resources: dto.resources ?? [],
-        imageUrl: dto.imageUrl,
+        imageUrl: derivedImageUrl,
         isActive: dto.isActive ?? true,
         createdById: userId,
+        images: imagesArray.length > 0 ? {
+          create: imagesArray.map((url, position) => ({ url, position })),
+        } : undefined,
       },
       include: {
         createdBy: {
@@ -39,6 +45,9 @@ export class SpacesService {
             email: true,
           },
         },
+        images: {
+          orderBy: { position: 'asc' },
+        },
       },
     });
   }
@@ -46,9 +55,20 @@ export class SpacesService {
   /**
    * Lista todos os espaços disponíveis (filtrando por ativos por padrão)
    */
-  async findAll(activeOnly = true) {
+  async findAll(activeOnly = true, q?: string, includeDeleted = false) {
+    const where: any = {};
+    if (activeOnly) {
+      where.isActive = true;
+    }
+    if (!includeDeleted) {
+      where.isDeleted = false;
+    }
+    if (q) {
+      where.name = { contains: q };
+    }
+
     return this.prisma.space.findMany({
-      where: activeOnly ? { isActive: true, isDeleted: false } : { isDeleted: false },
+      where,
       include: {
         createdBy: {
           select: {
@@ -56,6 +76,9 @@ export class SpacesService {
             fullName: true,
             email: true,
           },
+        },
+        images: {
+          orderBy: { position: 'asc' },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -67,7 +90,7 @@ export class SpacesService {
    */
   async findByOwner(userId: string) {
     return this.prisma.space.findMany({
-      where: { createdById: userId, isDeleted: false },
+      where: { createdById: userId },
       include: {
         createdBy: {
           select: {
@@ -75,6 +98,9 @@ export class SpacesService {
             fullName: true,
             email: true,
           },
+        },
+        images: {
+          orderBy: { position: 'asc' },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -84,7 +110,7 @@ export class SpacesService {
   /**
    * Busca um espaço específico pelo ID (UUID)
    */
-  async findOne(id: string) {
+  async findOne(id: string, user?: { id: string; role: string }) {
     const space = await this.prisma.space.findUnique({
       where: { id },
       include: {
@@ -95,11 +121,31 @@ export class SpacesService {
             email: true,
           },
         },
+        images: {
+          orderBy: { position: 'asc' },
+        },
       },
     });
 
     if (!space) {
       throw new NotFoundException(`Espaço com o ID "${id}" não foi encontrado.`);
+    }
+
+    if (space.isDeleted) {
+      let canView = false;
+      if (user) {
+        if (user.role === 'ADMIN' || user.id === space.createdById) {
+          canView = true;
+        } else {
+          const hasBooking = await this.prisma.booking.findFirst({
+            where: { spaceId: id, userId: user.id },
+          });
+          if (hasBooking) canView = true;
+        }
+      }
+      if (!canView) {
+        throw new ForbiddenException('Este espaço foi excluído e não está mais disponível publicamente.');
+      }
     }
 
     return space;
@@ -126,6 +172,20 @@ export class SpacesService {
         throw new ForbiddenException('Você não tem permissão para editar este espaço.');
       }
 
+      // Sync gallery
+      if (dto.images !== undefined) {
+        await tx.spaceImage.deleteMany({ where: { spaceId: id } });
+        if (dto.images.length > 0) {
+          await tx.spaceImage.createMany({
+            data: dto.images.map((url, position) => ({ spaceId: id, url, position })),
+          });
+        }
+      }
+
+      const derivedImageUrl = dto.images !== undefined
+        ? (dto.images.length > 0 ? dto.images[0] : null)
+        : (dto.imageUrl !== undefined ? dto.imageUrl : space.image_url);
+
       return tx.space.update({
         where: { id },
         data: {
@@ -134,8 +194,13 @@ export class SpacesService {
           capacity: dto.capacity,
           pricePerHour: dto.pricePerHour,
           resources: dto.resources !== undefined ? dto.resources : undefined,
-          imageUrl: dto.imageUrl,
+          imageUrl: derivedImageUrl,
           isActive: dto.isActive,
+        },
+        include: {
+          images: {
+            orderBy: { position: 'asc' },
+          },
         },
       });
     });

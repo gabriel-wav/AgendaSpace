@@ -18,6 +18,8 @@ export class UsersService {
         fullName: true,
         avatarUrl: true,
         role: true,
+        isDeleted: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -37,6 +39,8 @@ export class UsersService {
         fullName: true,
         avatarUrl: true,
         role: true,
+        isDeleted: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -50,7 +54,72 @@ export class UsersService {
   }
 
   /**
-   * Atualiza os dados de um usuário (role, fullName, avatarUrl, email).
+   * Bane/soft-delete um usuário.
+   */
+  async banUser(id: string, adminId: string) {
+    if (id === adminId) {
+      throw new BadRequestException('Você não pode banir sua própria conta.');
+    }
+
+    const user = await this.findOne(id);
+
+    if (user.role === 'ADMIN') {
+      const adminCount = await this.prisma.user.count({
+        where: { role: 'ADMIN', isDeleted: false },
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Não é possível banir o único administrador ativo do sistema.');
+      }
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        avatarUrl: true,
+        role: true,
+        isDeleted: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  /**
+   * Desbane / reativa um usuário.
+   */
+  async unbanUser(id: string) {
+    await this.findOne(id);
+
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        isDeleted: false,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        avatarUrl: true,
+        role: true,
+        isDeleted: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  /**
+   * Atualiza os dados de um usuário (role, fullName, avatarUrl, email, isDeleted).
    * Usado pela tela de Admin para trocar roles e pela tela de Settings para editar perfil.
    */
   async update(id: string, dto: UpdateUserDto) {
@@ -69,7 +138,7 @@ export class UsersService {
     // Se está tentando remover a role de ADMIN, verifica se é o último
     if (dto.role === 'USER' && user.role === 'ADMIN') {
       const adminCount = await this.prisma.user.count({
-        where: { role: 'ADMIN' }
+        where: { role: 'ADMIN', isDeleted: false }
       });
       if (adminCount <= 1) {
         throw new BadRequestException('Não é possível remover o último administrador do sistema.');
@@ -83,6 +152,10 @@ export class UsersService {
         ...(dto.avatarUrl !== undefined && { avatarUrl: dto.avatarUrl }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.role !== undefined && { role: dto.role }),
+        ...(dto.isDeleted !== undefined && {
+          isDeleted: dto.isDeleted,
+          deletedAt: dto.isDeleted ? new Date() : null,
+        }),
       },
       select: {
         id: true,
@@ -90,6 +163,8 @@ export class UsersService {
         fullName: true,
         avatarUrl: true,
         role: true,
+        isDeleted: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
       },

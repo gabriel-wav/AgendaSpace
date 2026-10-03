@@ -44,6 +44,8 @@ model User {
   fullName     String    @map("full_name")
   avatarUrl    String?   @map("avatar_url") @db.Text
   role         Role      @default(USER)
+  isDeleted    Boolean   @default(false) @map("is_deleted")
+  deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
 
@@ -71,6 +73,7 @@ model Space {
 
   createdBy    User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   bookings     Booking[]
+  images       SpaceImage[]
 
   @@index([createdById])
   @@map("spaces")
@@ -88,6 +91,8 @@ model Booking {
   approvalStatus ApprovalStatus @default(PENDING) @map("approval_status")
   approvedAt    DateTime?      @map("approved_at")
   approvedById  String?        @map("approved_by_id")
+  cancelledAt   DateTime?      @map("cancelled_at")
+  cancellationReason String?   @map("cancellation_reason") @db.VarChar(255)
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at")
 
@@ -128,4 +133,18 @@ model ContractAcceptance {
   booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@map("contract_acceptances")
+}
+
+model SpaceImage {
+  id        String   @id @default(uuid())
+  spaceId   String   @map("space_id")
+  url       String   @db.Text
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId])
+  @@map("space_images")
 }

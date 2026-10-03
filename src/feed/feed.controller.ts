@@ -15,6 +15,7 @@ import { FeedService } from './feed.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('feed')
@@ -37,11 +38,12 @@ export class FeedController {
   /**
    * Retorna o feed global
    */
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('posts')
   async getGlobalPosts(
     @Query('limit') limitStr?: string,
     @Query('cursor') cursor?: string,
-    @Optional() @CurrentUser('id') userId?: string, // Opcional, para likedByMe se o Guard fosse opcional, mas JwtAuthGuard exige logado.
+    @Optional() @CurrentUser('id') userId?: string,
   ) {
     const limit = limitStr ? parseInt(limitStr, 10) : 10;
     // O JwtAuthGuard está no escopo da classe, então userId sempre existirá
@@ -51,6 +53,7 @@ export class FeedController {
   /**
    * Retorna o feed de publicações de um espaço específico.
    */
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('spaces/:spaceId')
   async getPostsBySpace(
     @Param('spaceId') spaceId: string,
@@ -115,5 +118,72 @@ export class FeedController {
   ) {
     return this.feedService.deleteComment(commentId, user);
   }
-}
 
+  @UseGuards(JwtAuthGuard)
+  @Post('posts/:postId/hide')
+  async hidePost(
+    @Param('postId') postId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.feedService.hidePost(postId, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('posts/:postId/unhide')
+  async unhidePost(
+    @Param('postId') postId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.feedService.unhidePost(postId, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('posts/:postId/report')
+  async reportPost(
+    @Param('postId') postId: string,
+    @CurrentUser('id') userId: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.feedService.reportPost(postId, userId, reason || 'Conteúdo inadequado');
+  }
+
+  @Get('posts/:postId/comments')
+  async getPostComments(
+    @Param('postId') postId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    let limit = limitStr ? parseInt(limitStr, 10) : 10;
+    if (limit > 50) limit = 50;
+    return this.feedService.getPostComments(postId, cursor, limit);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('reports')
+  async getReports(
+    @CurrentUser() user: { id: string; role: string },
+    @Query('limit') limitStr?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    let limit = limitStr ? parseInt(limitStr, 10) : 10;
+    return this.feedService.getReports(user, limit, cursor);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('reports/:reportId/resolve')
+  async resolveReport(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.feedService.resolveReport(reportId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('reports/:reportId/discard')
+  async discardReport(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.feedService.discardReport(reportId, user);
+  }
+}

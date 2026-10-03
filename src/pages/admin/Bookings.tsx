@@ -9,12 +9,15 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, Search, Filter, Eye, Edit, X } from 'lucide-react';
+import { CalendarIcon, Search, Filter, Eye, Edit, X, Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchBookings, updateBookingStatus, Booking, BookingStatus } from '@/lib/bookings.api';
 import { formatBRL } from '@/lib/utils';
+import { getAbsoluteImageUrl } from '@/lib/api';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
+import { BookingDetailsDialog } from '@/components/bookings/BookingDetailsDialog';
 
 // Booking type is imported from bookings.api
 interface BookingsProps {
@@ -28,6 +31,7 @@ export default function Bookings({ mode = 'admin' }: BookingsProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<Date>();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
 
@@ -111,6 +115,25 @@ export default function Bookings({ mode = 'admin' }: BookingsProps) {
     const matchesHost = mode === 'admin' || booking.space?.createdById === user?.id;
 
     return matchesSearch && matchesStatus && matchesDate && matchesHost;
+  });
+
+  const groupedBookings = filteredBookings.reduce((acc, booking) => {
+    const spaceId = booking.space?.id || 'deleted-space';
+    if (!acc[spaceId]) {
+      acc[spaceId] = {
+        space: booking.space,
+        bookings: []
+      };
+    }
+    acc[spaceId].bookings.push(booking);
+    return acc;
+  }, {} as Record<string, { space: any, bookings: Booking[] }>);
+
+  const sortedGroups = Object.values(groupedBookings).sort((a, b) => {
+    const pendingA = a.bookings.filter(bk => bk.status.toLowerCase() === 'pending').length;
+    const pendingB = b.bookings.filter(bk => bk.status.toLowerCase() === 'pending').length;
+    if (pendingA !== pendingB) return pendingB - pendingA;
+    return (a.space?.name || '').localeCompare(b.space?.name || '');
   });
 
   if (loading) {
@@ -236,99 +259,154 @@ export default function Bookings({ mode = 'admin' }: BookingsProps) {
           <CardHeader>
             <CardTitle>Reservas ({filteredBookings.length})</CardTitle>
             <CardDescription>
-              Lista de todas as reservas filtradas
+              Lista de todas as reservas filtradas, agrupadas por espaço.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {filteredBookings.length > 0 ? (
-              <div className="space-y-4">
-                {filteredBookings.map((booking) => (
-                  <div key={booking.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-medium">{booking.space?.name}</h3>
-                          <Badge variant={getStatusColor(booking.status)}>
-                            {getStatusLabel(booking.status)}
-                          </Badge>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground">
-                          <div>
-                            <span className="font-medium">Usuário:</span> {booking.user?.fullName}
-                          </div>
-                          <div>
-                            <span className="font-medium">Email:</span> {booking.user?.email}
-                          </div>
-                          <div>
-                            <span className="font-medium">Data:</span> {' '}
-                            {format(new Date(booking.startDatetime), "dd/MM/yyyy", { locale: ptBR })}
-                          </div>
-                          <div>
-                            <span className="font-medium">Horário:</span> {' '}
-                            {format(new Date(booking.startDatetime), "HH:mm")} - {' '}
-                            {format(new Date(booking.endDatetime), "HH:mm")}
-                          </div>
-                          <div>
-                            <span className="font-medium">Capacidade:</span> {booking.space?.capacity || 'N/A'} pessoas
-                          </div>
-                          <div>
-                            <span className="font-medium">Valor:</span> {formatBRL(booking.totalPrice)}
-                          </div>
-                        </div>
+            {sortedGroups.length > 0 ? (
+              <div className="space-y-6">
+                {sortedGroups.map((group) => {
+                  const space = group.space;
+                  const img = space?.images?.[0]?.url || space?.imageUrl || (space as any)?.image_url;
 
-                        {booking.notes && (
-                          <div className="text-sm">
-                            <span className="font-medium">Observações:</span> {booking.notes}
-                          </div>
-                        )}
+                  return (
+                    <Card key={space?.id || 'deleted'} className="overflow-hidden border border-border/70">
+                      {/* Cabeçalho do Card (Espaço) */}
+                      <div className="bg-muted/40 p-4 border-b border-border/70 flex items-center gap-4">
+                        <div className="w-12 h-12 shrink-0 rounded overflow-hidden border">
+                          <SpaceImage
+                            src={img}
+                            alt={space?.name || 'Espaço'}
+                            containerClassName="w-full h-full bg-muted flex items-center justify-center"
+                            iconClassName="h-5 w-5 text-muted-foreground"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-base text-foreground truncate">
+                            {space?.name || 'Espaço Excluído'}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {group.bookings.length} {group.bookings.length === 1 ? 'reserva' : 'reservas'}
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="flex sm:flex-col gap-2 flex-wrap sm:ml-4 w-full sm:w-auto">
-                        {booking.status.toLowerCase() === 'pending' && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => handleUpdateStatus(booking.id, 'CONFIRMED')}
-                            >
-                              Confirmar (Manual)
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleUpdateStatus(booking.id, 'CANCELLED')}
-                            >
-                              Cancelar
-                            </Button>
-                          </>
-                        )}
-                        {booking.status.toLowerCase() === 'confirmed' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleUpdateStatus(booking.id, 'COMPLETED')}
-                          >
-                            Marcar como Realizada
-                          </Button>
-                        )}
-                        <Button 
-                          size="sm" 
-                          variant="ghost"
-                          onClick={() => {
-                            toast({
-                              title: "Detalhes da Reserva",
-                              description: `Reserva de ${booking.user?.fullName} para ${booking.space?.name} em ${format(new Date(booking.startDatetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`
-                            });
-                          }}
-                          title="Ver detalhes"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                      {/* Lista de Reservas do Espaço */}
+                      <div className="divide-y divide-border/60">
+                        {group.bookings
+                          .sort((a, b) => new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime())
+                          .map((booking) => {
+                            let cancelLabel = null;
+                            if (booking.status === 'CANCELLED' && booking.cancellationReason === 'UNPAID_AT_START') {
+                              cancelLabel = 'Cancelada por falta de pagamento';
+                            }
+
+                            return (
+                              <div key={booking.id} className="p-4 hover:bg-muted/50 transition-colors">
+                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-3">
+                                      <Badge variant={getStatusColor(booking.status)}>
+                                        {getStatusLabel(booking.status)}
+                                      </Badge>
+                                      {booking.status.toLowerCase() === 'pending' && (
+                                        <span className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-100/50 px-2 py-0.5 rounded-full border border-amber-200">
+                                          {booking.approvalStatus !== 'APPROVED' ? 'Aguardando Aprovação' : 'Aguardando Pagamento'}
+                                        </span>
+                                      )}
+                                      {cancelLabel && (
+                                        <span className="text-[10px] sm:text-xs font-medium text-destructive bg-destructive/10 px-2 py-0.5 rounded-full border border-destructive/20">
+                                          {cancelLabel}
+                                        </span>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground">
+                                      <div>
+                                        <span className="font-medium">Usuário:</span> {booking.user?.fullName}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">Email:</span> {booking.user?.email}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">Data:</span> {' '}
+                                        {format(new Date(booking.startDatetime), "dd/MM/yyyy", { locale: ptBR })}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">Horário:</span> {' '}
+                                        {format(new Date(booking.startDatetime), "HH:mm")} - {' '}
+                                        {format(new Date(booking.endDatetime), "HH:mm")}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">Capacidade:</span> {booking.space?.capacity || 'N/A'} pessoas
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">Valor:</span> {formatBRL(booking.totalPrice)}
+                                      </div>
+                                    </div>
+
+                                    {booking.notes && (
+                                      <div className="text-sm">
+                                        <span className="font-medium">Observações:</span> {booking.notes}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="flex sm:flex-col gap-2 flex-wrap sm:ml-4 w-full sm:w-auto">
+                                    {booking.status.toLowerCase() === 'pending' && (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          onClick={() => handleUpdateStatus(booking.id, 'CONFIRMED')}
+                                        >
+                                          Confirmar (Manual)
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleUpdateStatus(booking.id, 'CANCELLED')}
+                                        >
+                                          Cancelar
+                                        </Button>
+                                      </>
+                                    )}
+                                    {booking.status.toLowerCase() === 'confirmed' && (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleUpdateStatus(booking.id, 'COMPLETED')}
+                                        >
+                                          Marcar como Realizada
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-destructive hover:bg-destructive/10"
+                                          onClick={() => handleUpdateStatus(booking.id, 'CANCELLED')}
+                                        >
+                                          Cancelar
+                                        </Button>
+                                      </>
+                                    )}
+                                    <Button 
+                                      size="sm" 
+                                      variant="ghost"
+                                      onClick={() => setSelectedBooking(booking)}
+                                      title="Ver detalhes completos"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                        })}
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-12">
@@ -343,6 +421,15 @@ export default function Bookings({ mode = 'admin' }: BookingsProps) {
             )}
           </CardContent>
         </Card>
+
+        {/* Detailed Modal for Booking Inspection */}
+        <BookingDetailsDialog
+          booking={selectedBooking}
+          open={selectedBooking !== null}
+          onClose={() => setSelectedBooking(null)}
+          onUpdateStatus={handleUpdateStatus}
+          isAdminOrHost={true}
+        />
       </div>
     </AppLayout>
   );

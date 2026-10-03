@@ -28,6 +28,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Booking, fetchBookingById } from '@/lib/bookings.api';
+import { SpaceGallery } from '@/components/spaces/SpaceGallery';
 import { formatBRL } from '@/lib/utils';
 import { format, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -72,12 +73,22 @@ function compositeStatus(booking: Booking): {
     return { label: 'Concluída', variant: 'outline', detail: 'Reserva encerrada.' };
   }
   if (st === 'CANCELLED') {
+    if (booking.cancellationReason === 'UNPAID_AT_START') {
+      return { label: 'Cancelada', variant: 'destructive', detail: 'Cancelada automaticamente por falta de pagamento.' };
+    }
     return { label: 'Cancelada', variant: 'destructive', detail: 'Reserva cancelada.' };
   }
   if (st === 'PENDING') {
     if (ap === 'REJECTED') {
       return { label: 'Recusada', variant: 'destructive', detail: 'O anfitrião recusou esta solicitação.' };
     }
+    
+    // Check expiration: not paid and startDatetime has passed
+    const isExpired = !paid && new Date(booking.startDatetime).getTime() <= Date.now();
+    if (isExpired) {
+      return { label: 'Expirada', variant: 'destructive', detail: 'O prazo para pagamento (início da reserva) expirou.' };
+    }
+
     if (paid && ap !== 'APPROVED') {
       return { label: 'Paga', variant: 'secondary', detail: 'Pagamento recebido — aguardando aprovação do anfitrião.' };
     }
@@ -100,6 +111,10 @@ function canPay(booking: Booking): boolean {
   if (paid) return false;
   if (st !== 'PENDING') return false;
   if (ap === 'REJECTED') return false;
+
+  const isExpired = new Date(booking.startDatetime).getTime() <= Date.now();
+  if (isExpired) return false;
+
   return true;
 }
 
@@ -183,12 +198,14 @@ export function BookingDetailsDialog({
         {booking && (
           <div className="space-y-5 mt-2">
 
-            {/* Space image */}
-            {img && (
-              <div className="h-44 rounded-lg overflow-hidden bg-muted">
-                <img src={img} alt={booking.space?.name} className="w-full h-full object-cover" />
-              </div>
-            )}
+            {/* Space image / Gallery */}
+            <div className="mb-4">
+              <SpaceGallery 
+                images={booking.space?.images} 
+                fallbackUrl={img} 
+                spaceName={booking.space?.name || 'Espaço excluído'} 
+              />
+            </div>
 
             {/* Composite status pill */}
             {cs && (

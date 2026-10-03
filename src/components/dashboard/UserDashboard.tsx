@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,16 @@ import { BookingFlowDialog } from '@/components/booking/BookingFlowDialog';
 import { BookingDetailsDialog } from '@/components/booking/BookingDetailsDialog';
 import { PaymentDialog } from '@/components/booking/PaymentDialog';
 import { Booking } from '@/lib/bookings.api';
-import { fetchSpaces } from '@/lib/spaces.api';
+import { fetchSpaces, fetchSpaceById } from '@/lib/spaces.api';
 import { fetchClientStats, fetchHostStats } from '@/lib/dashboard.api';
+import { getAbsoluteImageUrl } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { User } from 'lucide-react';
+import { SpaceCard } from '@/components/spaces/SpaceCard';
+import { SpaceDetailsModal } from '@/components/spaces/SpaceDetailsModal';
+import { SpaceImage } from '@/components/spaces/SpaceImage';
 
 export function UserDashboard() {
   const { user } = useAuth();
@@ -24,7 +28,8 @@ export function UserDashboard() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [selectedBookingSeed, setSelectedBookingSeed] = useState<Booking | null>(null);
-  const [selectedSpace, setSelectedSpace] = useState<any>(null);
+  const [activeSpace, setActiveSpace] = useState<any | null>(null);
+  const [spaceModalMode, setSpaceModalMode] = useState<'DETAILS' | 'BOOKING' | null>(null);
   const [bookingToPay, setBookingToPay] = useState<Booking | null>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
@@ -72,6 +77,32 @@ export function UserDashboard() {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  const openSpaceDetails = useCallback(async (space: any) => {
+    setActiveSpace(space);
+    setSpaceModalMode('DETAILS');
+    try {
+      const fullSpace = await fetchSpaceById(space.id);
+      setActiveSpace((current: any) => (current?.id === space.id ? fullSpace : current));
+    } catch (error) {
+      console.error('Error fetching full space details:', error);
+    }
+  }, []);
+
+  const openSpaceBooking = useCallback((space: any) => {
+    setActiveSpace(space);
+    setSpaceModalMode('BOOKING');
+  }, []);
+
+  const closeSpaceModal = useCallback(() => {
+    setSpaceModalMode(null);
+    setTimeout(() => setActiveSpace(null), 200);
+  }, []);
+
+  const transitionToBooking = useCallback((space: any) => {
+    setActiveSpace(space);
+    setSpaceModalMode('BOOKING');
   }, []);
 
 
@@ -210,31 +241,45 @@ export function UserDashboard() {
                   const startDt = booking.startDatetime || booking.start_datetime;
                   const endDt = booking.endDatetime || booking.end_datetime;
                   const resources = Array.isArray(spaceObj?.resources) ? spaceObj.resources : [];
+                  const img = spaceObj?.images?.[0]?.url || spaceObj?.imageUrl || spaceObj?.image_url;
 
                   return (
-                    <div key={booking.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                      <div className="flex-1">
-                        <h3 className="font-medium">{spaceObj?.name || 'Espaço'}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {format(new Date(startDt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} - {format(new Date(endDt), "HH:mm", { locale: ptBR })}
-                        </p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="text-xs bg-muted px-2 py-1 rounded">
-                            {spaceObj?.capacity} pessoas
-                          </span>
-                          {resources.slice(0, 2).map((resource: string) => (
-                            <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                              {resource}
-                            </span>
-                          ))}
-                          {resources.length > 2 && (
+                    <div key={booking.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        {/* Space Thumbnail */}
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-md overflow-hidden border">
+                          <SpaceImage
+                            src={img}
+                            alt={spaceObj?.name || 'Espaço'}
+                            containerClassName="w-full h-full bg-muted flex items-center justify-center"
+                            iconClassName="h-8 w-8 text-muted-foreground"
+                          />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium truncate">{spaceObj?.name || 'Espaço'}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(startDt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} - {format(new Date(endDt), "HH:mm", { locale: ptBR })}
+                          </p>
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
                             <span className="text-xs bg-muted px-2 py-1 rounded">
-                              +{resources.length - 2}
+                              {spaceObj?.capacity} pessoas
                             </span>
-                          )}
+                            {resources.slice(0, 2).map((resource: string) => (
+                              <span key={resource} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                {resource}
+                              </span>
+                            ))}
+                            {resources.length > 2 && (
+                              <span className="text-xs bg-muted px-2 py-1 rounded">
+                                +{resources.length - 2}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
+
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0">
                         <Badge 
                           variant={String(booking.status).toUpperCase() === 'CONFIRMED' ? 'default' : String(booking.status).toUpperCase() === 'PENDING' ? 'secondary' : 'outline'}
                         >
@@ -242,20 +287,18 @@ export function UserDashboard() {
                            String(booking.status).toUpperCase() === 'PENDING' ? 'Pendente' : 
                            String(booking.status).toUpperCase() === 'COMPLETED' ? 'Realizado' : 'Cancelado'}
                         </Badge>
-                        <div className="mt-2">
-                           <Button
-                             variant="outline"
-                             size="sm"
-                             onClick={() => {
-                               setSelectedBookingSeed(booking as Booking);
-                               setSelectedBookingId(booking.id);
-                               setDetailsOpen(true);
-                             }}
-                           >
-                             <Eye className="mr-1 h-3 w-3" />
-                             Detalhes
-                           </Button>
-                         </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedBookingSeed(booking as Booking);
+                            setSelectedBookingId(booking.id);
+                            setDetailsOpen(true);
+                          }}
+                        >
+                          <Eye className="mr-1 h-3 w-3" />
+                          Detalhes
+                        </Button>
                       </div>
                     </div>
                   );
@@ -298,25 +341,12 @@ export function UserDashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {spaces.map((space) => (
-                  <div key={space.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-                    <div className="h-32 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                      <Building2 className="h-12 w-12 text-primary" />
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-medium mb-2">{space.name}</h3>
-                      <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
-                        <span>{space.capacity} pessoas</span>
-                        <span className="font-medium text-foreground">R$ {space.pricePerHour || space.price_per_hour}/h</span>
-                      </div>
-                      <Button 
-                        size="sm" 
-                        className="w-full"
-                        onClick={() => setSelectedSpace(space)}
-                      >
-                        Reservar
-                      </Button>
-                    </div>
-                  </div>
+                  <SpaceCard
+                    key={space.id}
+                    space={space}
+                    onDetails={openSpaceDetails}
+                    onBook={openSpaceBooking}
+                  />
                 ))}
               </div>
             )}
@@ -324,13 +354,23 @@ export function UserDashboard() {
         </Card>
       </div>
 
+      {/* Space Details Modal */}
+      <SpaceDetailsModal
+        space={activeSpace}
+        open={spaceModalMode === 'DETAILS'}
+        onClose={closeSpaceModal}
+        onBook={transitionToBooking}
+      />
+
       {/* Booking Flow Modal */}
       <BookingFlowDialog
-        space={selectedSpace}
-        open={!!selectedSpace}
-        onOpenChange={(open) => !open && setSelectedSpace(null)}
+        space={activeSpace}
+        open={spaceModalMode === 'BOOKING'}
+        onOpenChange={(open) => {
+          if (!open) closeSpaceModal();
+        }}
         onCompleted={() => {
-          setSelectedSpace(null);
+          closeSpaceModal();
           fetchData();
         }}
       />

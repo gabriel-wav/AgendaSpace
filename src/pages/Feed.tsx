@@ -5,16 +5,25 @@ import { NewPostInput } from '@/components/feed/NewPostInput';
 import { useAuth } from '@/contexts/AuthContext';
 import type { FeedPost } from '@/components/feed/feed.types';
 import { useFileUpload } from '@/hooks/useFileUpload';
-import { fetchGlobalPosts, toggleLike as apiToggleLike, createComment as apiCreateComment, createPost as apiCreatePost, deletePost as apiDeletePost } from '@/lib/feed.api';
+import { fetchGlobalPosts, toggleLike as apiToggleLike, createComment as apiCreateComment, createPost as apiCreatePost, deletePost as apiDeletePost, hidePost as apiHidePost, reportPost as apiReportPost, deleteComment as apiDeleteComment, unhidePost as apiUnhidePost } from '@/lib/feed.api';
 import { fetchSpaces } from '@/lib/spaces.api';
 import { useToast } from '@/hooks/use-toast';
+import { CommentsDrawer } from '@/components/feed/CommentsDrawer';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 
 export default function FeedPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [posts, setPosts] = useState<FeedPost[]>([]);
-  const [spaces, setSpaces] = useState<{ id: string; name: string }[]>([]);
+  const [spaces, setSpaces] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [reportingPostId, setReportingPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState<string>('Spam');
+  const [isReporting, setIsReporting] = useState(false);
   const { uploadFile } = useFileUpload();
 
   // Load spaces and initial posts
@@ -25,7 +34,7 @@ export default function FeedPage() {
           fetchSpaces(true), // only active
           fetchGlobalPosts()
         ]);
-        setSpaces(spacesData.map(s => ({ id: s.id, name: s.name })));
+        setSpaces(spacesData);
         setPosts(postsData as unknown as FeedPost[]);
       } catch (error) {
         toast({ title: 'Erro', description: 'Não foi possível carregar o feed.', variant: 'destructive' });
@@ -163,6 +172,79 @@ export default function FeedPage() {
     }
   }, [toast]);
 
+  // Delete a comment
+  const handleDeleteComment = useCallback(async (postId: string, commentId: string) => {
+    try {
+      await apiDeleteComment(commentId);
+      // Revalide a prévia para recuperar o próximo mais recente
+      const postsData = await fetchGlobalPosts();
+      setPosts(postsData as unknown as FeedPost[]);
+      toast({ title: 'Sucesso', description: 'Comentário excluído.' });
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.response?.data?.message || 'Não foi possível excluir o comentário.', variant: 'destructive' });
+    }
+  }, [toast]);
+
+  // Hide a post
+  const handleHidePost = useCallback(async (postId: string) => {
+    const postToHide = posts.find(p => p.id === postId);
+    if (!postToHide) return;
+
+    setPosts((prev) => prev.filter(p => p.id !== postId));
+    
+    try {
+      await apiHidePost(postId);
+      toast({
+        title: 'Ocultada',
+        description: 'Você não verá mais esta publicação.',
+        action: (
+          <button 
+            className="text-xs underline font-semibold transition-opacity hover:opacity-70"
+            onClick={async () => {
+              try {
+                await apiUnhidePost(postId);
+                setPosts(prev => {
+                  const newPosts = [...prev, postToHide];
+                  return newPosts.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                });
+              } catch(e) {
+                toast({ title: 'Erro', description: 'Não foi possível restaurar a publicação.', variant: 'destructive' });
+              }
+            }}
+          >
+            Desfazer
+          </button>
+        )
+      });
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Não foi possível ocultar a publicação.', variant: 'destructive' });
+      setPosts(prev => {
+        const newPosts = [...prev, postToHide];
+        return newPosts.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      });
+    }
+  }, [posts, toast]);
+
+  // Report a post
+  const handleReportPost = useCallback((postId: string) => {
+    setReportingPostId(postId);
+    setReportReason('Spam');
+  }, []);
+
+  const submitReport = async () => {
+    if (!reportingPostId) return;
+    setIsReporting(true);
+    try {
+      await apiReportPost(reportingPostId, reportReason);
+      toast({ title: 'Denunciada', description: 'A publicação foi enviada para análise.' });
+      setReportingPostId(null);
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Não foi possível denunciar a publicação.', variant: 'destructive' });
+    } finally {
+      setIsReporting(false);
+    }
+  };
+
   return (
     <AppLayout maxWidth="2xl">
       {/* Page header */}
@@ -201,17 +283,79 @@ export default function FeedPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              onLike={handleLike}
-              onComment={handleComment}
-              onDelete={handleDeletePost}
-            />
-          ))}
+          {posts.map((post) => {
+            const canDelete = user?.role === 'ADMIN' || user?.id === post.author.id;
+            return (
+              <PostCard
+                key={post.id}
+                post={post}
+                onLike={handleLike}
+                onComment={handleComment}
+                onDelete={canDelete ? handleDeletePost : undefined}
+                onDeleteComment={handleDeleteComment}
+                onHide={user ? handleHidePost : undefined}
+                onReport={user ? handleReportPost : undefined}
+                onViewAllComments={setSelectedPostId}
+                currentUser={user}
+              />
+            );
+          })}
         </div>
       )}
+
+      {selectedPostId && (
+        <CommentsDrawer
+          postId={selectedPostId}
+          totalComments={posts.find(p => p.id === selectedPostId)?.totalComments || 0}
+          isOpen={!!selectedPostId}
+          onClose={() => setSelectedPostId(null)}
+          onDeleteComment={(commentId) => handleDeleteComment(selectedPostId, commentId)}
+          currentUser={user}
+        />
+      )}
+
+      {/* Dialog for Reporting */}
+      <Dialog open={!!reportingPostId} onOpenChange={(open) => !open && !isReporting && setReportingPostId(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Denunciar publicação</DialogTitle>
+            <DialogDescription>
+              Por que você está denunciando esta publicação? Nossa equipe analisará sua denúncia.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {!posts.find(p => p.id === reportingPostId) && (
+              <p className="text-sm text-amber-600 mb-4">Atenção: Esta publicação não está mais visível no seu feed.</p>
+            )}
+            <RadioGroup value={reportReason} onValueChange={setReportReason} className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="Spam" id="r1" />
+                <Label htmlFor="r1" className="cursor-pointer">Spam</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="Conteúdo ofensivo" id="r2" />
+                <Label htmlFor="r2" className="cursor-pointer">Conteúdo ofensivo</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="Conteúdo inadequado" id="r3" />
+                <Label htmlFor="r3" className="cursor-pointer">Conteúdo inadequado</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="Outro" id="r4" />
+                <Label htmlFor="r4" className="cursor-pointer">Outro</Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReportingPostId(null)} disabled={isReporting}>Cancelar</Button>
+            <Button onClick={submitReport} disabled={isReporting}>
+              {isReporting ? 'Enviando...' : 'Enviar denúncia'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

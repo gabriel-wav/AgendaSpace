@@ -14,6 +14,7 @@ import { SpacesService } from './spaces.service';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('spaces')
@@ -38,9 +39,14 @@ export class SpacesController {
    * Não filtra pelo usuário logado; exibe todos os espaços ativos.
    */
   @Get()
-  async findAll(@Query('activeOnly') activeOnly?: string) {
+  async findAll(
+    @Query('activeOnly') activeOnly?: string,
+    @Query('q') q?: string,
+    @Query('includeDeleted') includeDeleted?: string,
+  ) {
     const isFiltered = activeOnly !== undefined ? activeOnly === 'true' : true;
-    return this.spacesService.findAll(isFiltered);
+    const isIncludeDeleted = includeDeleted !== undefined ? includeDeleted === 'true' : false;
+    return this.spacesService.findAll(isFiltered, q, isIncludeDeleted);
   }
 
   /**
@@ -56,9 +62,13 @@ export class SpacesController {
   /**
    * Detalhes de um espaço específico.
    */
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.spacesService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user?: { id: string; role: string },
+  ) {
+    return this.spacesService.findOne(id, user);
   }
 
   /**
