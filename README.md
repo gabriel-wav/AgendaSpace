@@ -442,3 +442,4 @@ Projeto desenvolvido e mantido por:
 - **Antonio** — [@Antoniojferreira3](https://github.com/Antoniojferreira3)
 - **Pedro H.** — [@pedroH901](https://github.com/pedroH901)
 - **Pedro M.** — [@PedroMAnjos](https://github.com/PedroMAnjos)
+- **Guilherme** — [@guilhermepereiraza90-creator](https://github.com/guilhermepereiraza90-creator)
