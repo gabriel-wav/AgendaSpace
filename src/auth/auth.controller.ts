@@ -4,7 +4,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto, VerifyCodeDto, ResendCodeDto } from './dto/login.dto';
 import { VerifyEmailDto, ResendVerificationDto, ChangeEmailDto, ConfirmChangeEmailAuthDto } from './dto/verify-email.dto';
 import { Enable2FADto, Disable2FADto, RegenerateRecoveryDto } from './dto/2fa.dto';
-import { ChangePasswordInitDto, ChangePasswordConfirmDto } from './dto/password.dto';
+import { ChangePasswordInitDto, ChangePasswordConfirmDto, ForgotPasswordDto, ResetPasswordDto } from './dto/password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
@@ -104,7 +104,18 @@ export class AuthController {
     return this.authService.regenerateRecoveryConfirm(req.user.id, dto);
   }
 
-  // --- Password Endpoints ---
+  @HttpCode(HttpStatus.OK)
+  @Post('password/forgot')
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: any) {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+    return this.authService.forgotPassword(dto, clientIp);
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('password/reset')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post('password/change/init')

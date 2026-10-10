@@ -8,6 +8,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto, VerifyCodeDto, ResendCodeDto } from './dto/login.dto';
 import { VerifyEmailDto, ResendVerificationDto, ChangeEmailDto, ConfirmChangeEmailAuthDto } from './dto/verify-email.dto';
 import { Enable2FADto, Disable2FADto, RegenerateRecoveryDto } from './dto/2fa.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password.dto';
 
 @Injectable()
 export class AuthService {
@@ -803,7 +804,190 @@ export class AuthService {
     });
   }
 
-  // --- PASSWORD CHANGE ---
+  // --- PASSWORD RECOVERY (PUBLIC FORGOT/RESET) ---
+  async forgotPassword(dto: ForgotPasswordDto, clientIp?: string) {
+    const emailNorm = dto.email.trim().toLowerCase();
+    const GENERIC_RESPONSE = {
+      message: 'Se houver uma conta disponível para esse email, enviaremos as instruções de recuperação.',
+    };
+
+    // 1. Limite de taxa (Rate Limit) por email recente para evitar spam
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const recentChallenge = await this.prisma.authChallenge.findFirst({
+      where: {
+        targetEmail: emailNorm,
+        purpose: 'PASSWORD_RECOVERY',
+        createdAt: { gt: oneMinuteAgo },
+      },
+    });
+
+    if (recentChallenge) {
+      return GENERIC_RESPONSE;
+    }
+
+    // 2. Busca do usuário (retorno idêntico genérico se não existir ou se estiver deletado)
+    const user = await this.prisma.user.findUnique({
+      where: { email: emailNorm },
+    });
+
+    if (!user || user.isDeleted) {
+      return GENERIC_RESPONSE;
+    }
+
+    // 3. Geração de token criptograficamente seguro (30 minutos de validade)
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenDigest = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    // 4. Revoga desafios anteriores de PASSWORD_RECOVERY e enfileira email na mesma transação
+    await this.prisma.$transaction(async (tx) => {
+      await tx.authChallenge.updateMany({
+        where: {
+          userId: user.id,
+          purpose: 'PASSWORD_RECOVERY',
+          consumedAt: null,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+
+      await tx.authChallenge.create({
+        data: {
+          userId: user.id,
+          purpose: 'PASSWORD_RECOVERY',
+          targetEmail: user.email,
+          tokenDigest,
+          expiresAt,
+        },
+      });
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+      const tokenLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+
+      await this.mailService.queueEmail(tx, {
+        recipient: user.email,
+        templateName: 'PASSWORD_RECOVERY',
+        payload: {
+          fullName: user.fullName,
+          tokenLink,
+          expiresMinutes: 30,
+        },
+        idempotencyKey: `pwd-recovery-${user.id}-${Date.now()}`,
+      });
+    });
+
+    return GENERIC_RESPONSE;
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const rawToken = dto.token.trim();
+    if (!rawToken) {
+      throw new BadRequestException('Token de recuperação inválido.');
+    }
+
+    const tokenDigest = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+
+      // 1. Busca o desafio de recuperação
+      const challenge = await tx.authChallenge.findFirst({
+        where: {
+          tokenDigest,
+          purpose: 'PASSWORD_RECOVERY',
+        },
+        include: {
+          user: true,
+        },
+      });
+
+      if (!challenge) {
+        throw new BadRequestException('Token de recuperação inválido ou inexistente.');
+      }
+
+      if (challenge.consumedAt || challenge.revokedAt || challenge.expiresAt < now) {
+        throw new BadRequestException('Token de recuperação expirado, revogado ou já utilizado.');
+      }
+
+      const user = challenge.user;
+      if (!user || user.isDeleted) {
+        throw new BadRequestException('Conta de usuário inativa, banida ou inexistente.');
+      }
+
+      // Valida endereço atual associado à solicitação
+      if (challenge.targetEmail && challenge.targetEmail.toLowerCase() !== user.email.toLowerCase()) {
+        throw new BadRequestException('O endereço de email associado à solicitação foi alterado.');
+      }
+
+      // 2. Consumo atômico condicional para prevenir que 2 requisições simultâneas utilizem o mesmo token
+      const updateResult = await tx.authChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          purpose: 'PASSWORD_RECOVERY',
+          consumedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: {
+          consumedAt: now,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new BadRequestException('Token de recuperação já utilizado ou expirado.');
+      }
+
+      // 3. Hash da nova senha com bcrypt
+      const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
+
+      // 4. Grava novo passwordHash e incrementa authVersion (invalida sessões anteriores)
+      // Preserva emailVerifiedAt, role, isDeleted, isTwoFactorEnabled intactos
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: newPasswordHash,
+          authVersion: { increment: 1 },
+        },
+      });
+
+      // 5. Revoga todos os demais desafios pendentes do usuário
+      await tx.authChallenge.updateMany({
+        where: {
+          userId: user.id,
+          id: { not: challenge.id },
+          consumedAt: null,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      // 6. Enfileira aviso de senha alterada (sem a senha)
+      await this.mailService.queueEmail(tx, {
+        recipient: user.email,
+        templateName: 'PASSWORD_CHANGED',
+        payload: {
+          fullName: user.fullName,
+          date: new Intl.DateTimeFormat('pt-BR', {
+            dateStyle: 'short',
+            timeStyle: 'medium',
+            timeZone: 'America/Sao_Paulo',
+          }).format(now),
+        },
+        idempotencyKey: `pwd-changed-${user.id}-${now.getTime()}`,
+      });
+
+      return {
+        success: true,
+        message: 'Senha redefinida com sucesso. Faça login com sua nova senha.',
+      };
+    });
+  }
+
+  // --- PASSWORD CHANGE (AUTHENTICATED) ---
   async changePasswordInit(userId: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.isDeleted) throw new UnauthorizedException('Usuário inválido.');
@@ -843,10 +1027,16 @@ export class AuthService {
       return { status: 'MFA_REQUIRED', challengeId };
     }
 
-    // No 2FA -> change directly
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newPasswordHash, authVersion: user.authVersion + 1 }
+    // No 2FA -> change directly and revoke any pending challenges (including recoveries)
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash, authVersion: user.authVersion + 1 }
+      });
+      await tx.authChallenge.updateMany({
+        where: { userId, consumedAt: null, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
     });
 
     return { status: 'SUCCESS', message: 'Senha alterada com sucesso.' };
@@ -880,7 +1070,13 @@ export class AuthService {
       
       await tx.user.update({
         where: { id: userId },
-        data: { passwordHash: challenge.targetEmail, authVersion: user.authVersion + 1 }
+        data: { passwordHash: challenge.targetEmail, authVersion: (user?.authVersion || 0) + 1 }
+      });
+
+      // Revoke any remaining active challenges for user
+      await tx.authChallenge.updateMany({
+        where: { userId, consumedAt: null, revokedAt: null },
+        data: { revokedAt: new Date() }
       });
 
       return { success: true, message: 'Senha alterada com sucesso.' };

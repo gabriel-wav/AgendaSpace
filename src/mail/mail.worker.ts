@@ -65,7 +65,7 @@ export class MailWorker {
             shouldSend = userPrefs.emailReminders;
           } else if (tpl === 'LOGIN_ALERT') {
             shouldSend = userPrefs.loginAlerts;
-          } else if (!['EMAIL_CONFIRMATION', 'PASSWORD_RESET', 'TWO_FACTOR_CODE', 'RECOVERY_CODES', 'SECURITY_ALERT'].includes(tpl)) {
+          } else if (!['EMAIL_CONFIRMATION', 'PASSWORD_RESET', 'PASSWORD_RECOVERY', 'PASSWORD_CHANGED', 'TWO_FACTOR_CODE', 'RECOVERY_CODES', 'SECURITY_ALERT'].includes(tpl)) {
             // General optional notifications fallback
             shouldSend = userPrefs.emailNotifications;
           }

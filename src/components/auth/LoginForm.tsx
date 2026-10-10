@@ -17,20 +17,25 @@ function Field({
   label,
   error,
   children,
+  action,
 }: {
   id: string;
   label: string;
   error?: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <label
-        htmlFor={id}
-        className="block text-xs font-medium uppercase tracking-widest text-muted-foreground"
-      >
-        {label}
-      </label>
+      <div className="flex items-center justify-between">
+        <label
+          htmlFor={id}
+          className="block text-xs font-medium uppercase tracking-widest text-muted-foreground"
+        >
+          {label}
+        </label>
+        {action}
+      </div>
       {children}
       {error && (
         <p className="text-xs text-error animate-in-up">{error}</p>
@@ -222,7 +227,19 @@ export function LoginForm() {
           />
         </Field>
 
-        <Field id="password" label="Senha" error={errors.password?.message}>
+        <Field
+          id="password"
+          label="Senha"
+          error={errors.password?.message}
+          action={
+            <Link
+              to="/forgot-password"
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
+            >
+              Esqueci minha senha
+            </Link>
+          }
+        >
           <div className="relative">
             <input
               id="password"

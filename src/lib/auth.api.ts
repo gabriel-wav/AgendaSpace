@@ -139,3 +139,13 @@ export async function changePasswordConfirm(payload: { challengeId: string; code
   const { data } = await api.post('/auth/password/change/confirm', payload);
   return data;
 }
+
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+  const { data } = await api.post('/auth/password/forgot', { email });
+  return data;
+}
+
+export async function resetPassword(payload: { token: string; newPassword: string }): Promise<{ success: boolean; message: string }> {
+  const { data } = await api.post('/auth/password/reset', payload);
+  return data;
+}

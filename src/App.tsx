@@ -11,6 +11,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CheckEmail from "./pages/CheckEmail";
 import VerifyEmail from "./pages/VerifyEmail";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import FeedPage from "./pages/Feed";
@@ -53,6 +55,8 @@ const App = () => (
             <Route path="/register" element={<Register />} />
             <Route path="/check-email" element={<CheckEmail />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Protected — any authenticated user */}
             <Route path="/dashboard" element={

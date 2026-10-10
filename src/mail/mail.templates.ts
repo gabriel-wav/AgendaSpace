@@ -37,6 +37,35 @@ export const TEMPLATES = {
     `,
     text: (data: any) => `Olá, ${data.fullName}!\n\nPara confirmar a alteração do seu email, acesse o link:\n${data.tokenLink}`
   },
+  PASSWORD_RECOVERY: {
+    subject: 'Recuperação de Senha - AgendaSpace',
+    html: (data: any) => `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #0f172a;">Olá, ${escapeHtml(data.fullName)}!</h2>
+        <p>Recebemos uma solicitação para redefinir a senha da sua conta no AgendaSpace.</p>
+        <p>Este link é válido por <strong>${escapeHtml(String(data.expiresMinutes || 30))} minutos</strong> e pode ser utilizado apenas uma vez.</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${escapeHtml(data.tokenLink)}" style="background-color: #0f172a; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Redefinir Senha</a>
+        </div>
+        <p>Ou acesse diretamente pelo link: <br><a href="${escapeHtml(data.tokenLink)}" style="color: #2563eb; word-break: break-all;">${escapeHtml(data.tokenLink)}</a></p>
+        <p style="color: #64748b; font-size: 13px; margin-top: 24px;">Se você não solicitou a recuperação de senha, nenhuma ação é necessária. Sua senha atual permanecerá segura.</p>
+      </div>
+    `,
+    text: (data: any) => `Olá, ${data.fullName}!\n\nRecebemos uma solicitação para redefinir sua senha no AgendaSpace. Este link é válido por ${data.expiresMinutes || 30} minutos:\n\n${data.tokenLink}\n\nSe você não solicitou, ignore esta mensagem.`
+  },
+  PASSWORD_CHANGED: {
+    subject: 'Sua senha foi alterada com sucesso - AgendaSpace',
+    html: (data: any) => `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #16a34a;">Senha alterada com sucesso</h2>
+        <p>Olá, ${escapeHtml(data.fullName)}!</p>
+        <p>A senha da sua conta no AgendaSpace foi alterada em <strong>${escapeHtml(data.date)}</strong>.</p>
+        <p>Todas as sessões anteriores foram desconectadas por motivos de segurança.</p>
+        <p style="color: #dc2626; font-size: 13px; margin-top: 20px;">Se você não realizou esta alteração, entre em contato imediatamente com o suporte ou solicite uma nova redefinição.</p>
+      </div>
+    `,
+    text: (data: any) => `Olá, ${data.fullName}!\n\nA senha da sua conta no AgendaSpace foi alterada em ${data.date}. Todas as sessões anteriores foram invalidadas por segurança. Se você não fez essa alteração, entre em contato imediatamente.`
+  },
   BOOKING_CONFIRMED: {
     subject: 'Reserva Confirmada',
     html: (data: any) => `
