@@ -211,6 +211,8 @@ function MobileNav({ items }: { items: NavItem[] }) {
   );
 }
 
+import { NotificationsBell } from '../notifications/NotificationsBell';
+
 export function Header() {
   const { isAdmin } = useAuth();
 
@@ -220,6 +222,7 @@ export function Header() {
     { label: 'Reservas',   href: '/admin/bookings',   icon: Calendar },
     { label: 'Relatórios', href: '/admin/reports',    icon: BarChart3 },
     { label: 'Usuários',   href: '/admin/users',      icon: Users },
+    { label: 'Feed',       href: '/feed',             icon: ImagePlay },
   ];
 
   const userNav: NavItem[] = [
@@ -253,6 +256,7 @@ export function Header() {
 
         {/* Right — Profile menu + Mobile hamburger */}
         <div className="flex items-center gap-2">
+          <NotificationsBell />
           <ProfileMenu />
           <MobileNav items={navItems} />
         </div>

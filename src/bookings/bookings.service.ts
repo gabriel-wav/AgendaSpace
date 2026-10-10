@@ -9,15 +9,57 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto, BookingStatusEnum } from './dto/update-booking-status.dto';
 import { PayBookingDto } from './dto/pay-booking.dto';
+import { MailService } from '../mail/mail.service';
+import { PushService } from '../notifications/push.service';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class BookingsService {
   /**
-   * Injeção do PrismaService via construtor.
-   * O Prisma fornece acesso tipado às tabelas Booking, Space e User no MySQL.
+   * Injeção do PrismaService, MailService e PushService.
    */
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+    private readonly pushService: PushService,
+  ) {}
+
+  private async createNotificationAndPush(
+    tx: any,
+    data: {
+      userId: string;
+      type: string;
+      referenceId?: string | null;
+      title: string;
+      message: string;
+      idempotencyKey: string;
+      url?: string;
+    },
+  ) {
+    const notif = await tx.notification.create({
+      data: {
+        userId: data.userId,
+        type: data.type,
+        referenceId: data.referenceId || null,
+        title: data.title,
+        message: data.message,
+        idempotencyKey: data.idempotencyKey,
+      },
+    });
+
+    await this.pushService.queuePush(tx, {
+      userId: data.userId,
+      notificationId: notif.id,
+      referenceId: data.referenceId || null,
+      type: data.type,
+      title: data.title,
+      body: data.message,
+      url: data.url || (data.referenceId ? `/bookings/${data.referenceId}` : '/notifications'),
+      idempotencyKey: `push-${data.idempotencyKey}`,
+    });
+
+    return notif;
+  }
 
   /**
    * Criação de reserva com validações completas:
@@ -135,34 +177,76 @@ export class BookingsService {
     const hourlyRate = Number(space.pricePerHour);
     const totalPrice = Math.round(durationInHours * hourlyRate * 100) / 100;
 
-    // 4. Criação do registro no banco com status inicial PENDING
-    return this.prisma.booking.create({
-      data: {
-        userId,
-        spaceId: dto.spaceId,
-        startDatetime: start,
-        endDatetime: end,
-        totalPrice,
-        notes: dto.notes,
-        status: BookingStatusEnum.PENDING,
-      },
-      include: {
-        space: {
-          select: {
-            id: true,
-            name: true,
-            pricePerHour: true,
-            imageUrl: true,
+    // 4. Criação do registro no banco com status inicial PENDING usando transação
+    return this.prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.create({
+        data: {
+          userId,
+          spaceId: dto.spaceId,
+          startDatetime: start,
+          endDatetime: end,
+          totalPrice,
+          notes: dto.notes,
+          status: BookingStatusEnum.PENDING,
+        },
+        include: {
+          space: {
+            select: {
+              id: true,
+              name: true,
+              pricePerHour: true,
+              imageUrl: true,
+              createdById: true,
+              createdBy: { select: { email: true, fullName: true } }
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
           },
         },
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
+      });
+
+      const formattedDate = start.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+      // Notificação in-app e push para o cliente
+      await this.createNotificationAndPush(tx, {
+        userId: booking.user.id,
+        type: 'BOOKING_CREATED',
+        referenceId: booking.id,
+        title: 'Reserva Solicitada',
+        message: `Sua solicitação de reserva para ${booking.space.name} foi enviada.`,
+        idempotencyKey: `notif-client-create-${booking.id}`,
+      });
+
+      // Notificação in-app, push e email para o proprietário (se não for o mesmo usuário)
+      if (booking.space.createdById && booking.space.createdById !== booking.user.id) {
+        await this.createNotificationAndPush(tx, {
+          userId: booking.space.createdById,
+          type: 'BOOKING_REQUESTED',
+          referenceId: booking.id,
+          title: 'Nova Solicitação de Reserva',
+          message: `${booking.user.fullName} solicitou reserva em ${booking.space.name}.`,
+          idempotencyKey: `notif-host-create-${booking.id}`,
+        });
+
+        await this.mailService.queueEmail(tx, {
+          recipient: booking.space.createdBy!.email,
+          templateName: 'BOOKING_REQUESTED',
+          payload: {
+            fullName: booking.space.createdBy!.fullName,
+            spaceName: booking.space.name,
+            date: formattedDate,
+            price: booking.totalPrice,
           },
-        },
-      },
+          idempotencyKey: `email-host-create-${booking.id}`,
+        });
+      }
+
+      return booking;
     });
   }
 
@@ -355,7 +439,7 @@ export class BookingsService {
   ) {
     const booking = await this.prisma.booking.findUnique({
       where: { id },
-      include: { space: true },
+      include: { space: { include: { createdBy: true } }, user: true },
     });
 
     if (!booking) {
@@ -381,14 +465,38 @@ export class BookingsService {
 
       if (dto.approvalStatus === 'REJECTED') {
         // Se houver pagamento simulado, podemos registrar reversão no futuro
-        return this.prisma.booking.update({
-          where: { id },
-          data: {
-            approvalStatus: 'REJECTED',
-            approvedAt: new Date(),
-            approvedById: userId,
-            status: 'CANCELLED',
-          },
+        return this.prisma.$transaction(async (tx) => {
+          const updated = await tx.booking.update({
+            where: { id },
+            data: {
+              approvalStatus: 'REJECTED',
+              approvedAt: new Date(),
+              approvedById: userId,
+              status: 'CANCELLED',
+            },
+          });
+
+          await this.createNotificationAndPush(tx, {
+            userId: booking.user.id,
+            type: 'BOOKING_REJECTED',
+            referenceId: booking.id,
+            title: 'Reserva Rejeitada',
+            message: `Sua solicitação de reserva em ${booking.space.name} foi rejeitada.`,
+            idempotencyKey: `notif-client-reject-${booking.id}`,
+          });
+
+          await this.mailService.queueEmail(tx, {
+            recipient: booking.user.email,
+            templateName: 'BOOKING_REJECTED',
+            payload: {
+              fullName: booking.user.fullName,
+              spaceName: booking.space.name,
+              date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+            },
+            idempotencyKey: `email-client-reject-${booking.id}`,
+          });
+
+          return updated;
         });
       }
 
@@ -426,7 +534,7 @@ export class BookingsService {
                 throw new ConflictException('Não é possível confirmar a reserva pois já existe outra reserva conflitante para este horário.');
               }
 
-              return tx.booking.update({
+              const updated = await tx.booking.update({
                 where: { id },
                 data: {
                   status: 'CONFIRMED',
@@ -435,9 +543,55 @@ export class BookingsService {
                   approvedById: userId,
                 },
               });
+
+              await this.createNotificationAndPush(tx, {
+                userId: booking.user.id,
+                type: 'BOOKING_CONFIRMED',
+                referenceId: booking.id,
+                title: 'Reserva Confirmada',
+                message: `Sua reserva em ${booking.space.name} foi confirmada.`,
+                idempotencyKey: `notif-client-confirm-${booking.id}`,
+              });
+
+              await this.mailService.queueEmail(tx, {
+                recipient: booking.user.email,
+                templateName: 'BOOKING_CONFIRMED',
+                payload: {
+                  fullName: booking.user.fullName,
+                  spaceName: booking.space.name,
+                  date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+                  price: booking.totalPrice,
+                },
+                idempotencyKey: `email-client-confirm-${booking.id}`,
+              });
+
+              if (booking.space.createdById && booking.space.createdById !== booking.user.id) {
+                await this.createNotificationAndPush(tx, {
+                  userId: booking.space.createdById,
+                  type: 'BOOKING_CONFIRMED_HOST',
+                  referenceId: booking.id,
+                  title: 'Reserva Confirmada',
+                  message: `A reserva de ${booking.user.fullName} em ${booking.space.name} está confirmada.`,
+                  idempotencyKey: `notif-host-confirm-${booking.id}`,
+                });
+                // Assuming space owner wants email about confirmed
+                await this.mailService.queueEmail(tx, {
+                  recipient: booking.space.createdBy!.email,
+                  templateName: 'BOOKING_CONFIRMED',
+                  payload: {
+                    fullName: booking.space.createdBy!.fullName,
+                    spaceName: booking.space.name,
+                    date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+                    price: booking.totalPrice,
+                  },
+                  idempotencyKey: `email-host-confirm-${booking.id}`,
+                });
+              }
+
+              return updated;
             }
 
-            return tx.booking.update({
+            const updated = await tx.booking.update({
               where: { id },
               data: {
                 approvalStatus: 'APPROVED',
@@ -445,6 +599,29 @@ export class BookingsService {
                 approvedById: userId,
               },
             });
+
+            await this.createNotificationAndPush(tx, {
+              userId: booking.user.id,
+              type: 'BOOKING_APPROVED',
+              referenceId: booking.id,
+              title: 'Reserva Aprovada',
+              message: `Sua solicitação em ${booking.space.name} foi aprovada. Pague para confirmar.`,
+              idempotencyKey: `notif-client-approve-${booking.id}`,
+            });
+
+            await this.mailService.queueEmail(tx, {
+              recipient: booking.user.email,
+              templateName: 'BOOKING_APPROVED',
+              payload: {
+                fullName: booking.user.fullName,
+                spaceName: booking.space.name,
+                date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+                price: booking.totalPrice,
+              },
+              idempotencyKey: `email-client-approve-${booking.id}`,
+            });
+
+            return updated;
           }
         );
       }
@@ -487,15 +664,67 @@ export class BookingsService {
         throw new BadRequestException('Não é possível concluir uma reserva antes do término do seu horário programado.');
       }
 
-      return this.prisma.booking.update({
-        where: { id },
-        data: {
-          status: targetStatus as any,
-          cancelledAt: targetStatus === 'CANCELLED' ? new Date() : undefined,
-          cancellationReason: targetStatus === 'CANCELLED'
-            ? (isClient && !isOwnerOfSpace && !isAdmin ? 'CANCELLED_BY_CLIENT' : isOwnerOfSpace ? 'CANCELLED_BY_HOST' : 'CANCELLED_BY_ADMIN')
-            : undefined,
-        },
+      return this.prisma.$transaction(async (tx) => {
+        const cancellationReason = targetStatus === 'CANCELLED'
+          ? (isClient && !isOwnerOfSpace && !isAdmin ? 'CANCELLED_BY_CLIENT' : isOwnerOfSpace ? 'CANCELLED_BY_HOST' : 'CANCELLED_BY_ADMIN')
+          : undefined;
+
+        const updated = await tx.booking.update({
+          where: { id },
+          data: {
+            status: targetStatus as any,
+            cancelledAt: targetStatus === 'CANCELLED' ? new Date() : undefined,
+            cancellationReason,
+          },
+        });
+
+        if (targetStatus === 'CANCELLED') {
+          // Client notify
+          await this.createNotificationAndPush(tx, {
+            userId: booking.user.id,
+            type: 'BOOKING_CANCELLED',
+            referenceId: booking.id,
+            title: 'Reserva Cancelada',
+            message: `A reserva em ${booking.space.name} foi cancelada.`,
+            idempotencyKey: `notif-client-cancel-${booking.id}-${Date.now()}`,
+          });
+          await this.mailService.queueEmail(tx, {
+            recipient: booking.user.email,
+            templateName: 'BOOKING_CANCELLED',
+            payload: {
+              fullName: booking.user.fullName,
+              spaceName: booking.space.name,
+              date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+              reason: cancellationReason,
+            },
+            idempotencyKey: `email-client-cancel-${booking.id}-${Date.now()}`,
+          });
+
+          // Host notify
+          if (booking.space.createdById && booking.space.createdById !== booking.user.id) {
+            await this.createNotificationAndPush(tx, {
+              userId: booking.space.createdById,
+              type: 'BOOKING_CANCELLED_HOST',
+              referenceId: booking.id,
+              title: 'Reserva Cancelada',
+              message: `A reserva de ${booking.user.fullName} em ${booking.space.name} foi cancelada.`,
+              idempotencyKey: `notif-host-cancel-${booking.id}-${Date.now()}`,
+            });
+            await this.mailService.queueEmail(tx, {
+              recipient: booking.space.createdBy!.email,
+              templateName: 'BOOKING_CANCELLED',
+              payload: {
+                fullName: booking.space.createdBy!.fullName,
+                spaceName: booking.space.name,
+                date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+                reason: cancellationReason,
+              },
+              idempotencyKey: `email-host-cancel-${booking.id}-${Date.now()}`,
+            });
+          }
+        }
+
+        return updated;
       });
     }
 
@@ -509,7 +738,7 @@ export class BookingsService {
     // Buscar reserva original com payment para verificar idempotência antes
     const booking = await this.prisma.booking.findUnique({
       where: { id, userId },
-      include: { space: true, payment: true },
+      include: { space: { include: { createdBy: true } }, payment: true, user: true },
     });
 
     if (!booking) {
@@ -597,10 +826,57 @@ export class BookingsService {
 
         if (booking.approvalStatus === 'APPROVED') {
           // Atualizar reserva para CONFIRMED
-          return tx.booking.update({
+          const updated = await tx.booking.update({
             where: { id: booking.id },
             data: { status: 'CONFIRMED' },
           });
+
+          await this.createNotificationAndPush(tx, {
+            userId: booking.user.id,
+            type: 'BOOKING_CONFIRMED',
+            referenceId: booking.id,
+            title: 'Reserva Confirmada',
+            message: `Sua reserva em ${booking.space.name} foi confirmada após o pagamento.`,
+            idempotencyKey: `notif-client-pay-${booking.id}`,
+          });
+
+          await this.mailService.queueEmail(tx, {
+            recipient: booking.user.email,
+            templateName: 'BOOKING_CONFIRMED',
+            payload: {
+              fullName: booking.user.fullName,
+              spaceName: booking.space.name,
+              date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+              price: booking.totalPrice,
+            },
+            idempotencyKey: `email-client-pay-${booking.id}`,
+          });
+
+          // Notificação de pagamento com sucesso para o proprietário (quando as condições de notificação de host permitirem)
+          const host = await tx.user.findUnique({ where: { id: booking.space.createdById || '' } });
+          if (host && host.id !== booking.user.id) {
+            await this.createNotificationAndPush(tx, {
+              userId: host.id,
+              type: 'BOOKING_CONFIRMED_HOST',
+              referenceId: booking.id,
+              title: 'Pagamento Recebido e Reserva Confirmada',
+              message: `${booking.user.fullName} concluiu o pagamento da reserva em ${booking.space.name}.`,
+              idempotencyKey: `notif-host-pay-${booking.id}`,
+            });
+            await this.mailService.queueEmail(tx, {
+              recipient: host.email,
+              templateName: 'BOOKING_CONFIRMED', // O mesmo template ou um específico, reusando
+              payload: {
+                fullName: host.fullName,
+                spaceName: booking.space.name,
+                date: booking.startDatetime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+                price: booking.totalPrice,
+              },
+              idempotencyKey: `email-host-pay-${booking.id}`,
+            });
+          }
+
+          return updated;
         }
 
         return tx.booking.findUnique({ where: { id: booking.id } });

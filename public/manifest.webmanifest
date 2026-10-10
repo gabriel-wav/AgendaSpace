@@ -1,0 +1,17 @@
+{
+  "name": "AgendaSpace",
+  "short_name": "AgendaSpace",
+  "description": "Gestão e Reserva Inteligente de Espaços",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

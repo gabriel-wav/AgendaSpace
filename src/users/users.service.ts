@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @Injectable()
 export class UsersService {
@@ -17,6 +18,8 @@ export class UsersService {
         email: true,
         fullName: true,
         avatarUrl: true,
+        bio: true,
+        phone: true,
         role: true,
         isDeleted: true,
         deletedAt: true,
@@ -38,6 +41,8 @@ export class UsersService {
         email: true,
         fullName: true,
         avatarUrl: true,
+        bio: true,
+        phone: true,
         role: true,
         isDeleted: true,
         deletedAt: true,
@@ -83,6 +88,8 @@ export class UsersService {
         email: true,
         fullName: true,
         avatarUrl: true,
+        bio: true,
+        phone: true,
         role: true,
         isDeleted: true,
         deletedAt: true,
@@ -109,6 +116,8 @@ export class UsersService {
         email: true,
         fullName: true,
         avatarUrl: true,
+        bio: true,
+        phone: true,
         role: true,
         isDeleted: true,
         deletedAt: true,
@@ -150,6 +159,8 @@ export class UsersService {
       data: {
         ...(dto.fullName !== undefined && { fullName: dto.fullName }),
         ...(dto.avatarUrl !== undefined && { avatarUrl: dto.avatarUrl }),
+        ...('bio' in dto && dto.bio !== undefined && { bio: (dto as any).bio === '' ? null : (dto as any).bio }),
+        ...('phone' in dto && dto.phone !== undefined && { phone: (dto as any).phone === '' ? null : (dto as any).phone }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.role !== undefined && { role: dto.role }),
         ...(dto.isDeleted !== undefined && {
@@ -162,12 +173,35 @@ export class UsersService {
         email: true,
         fullName: true,
         avatarUrl: true,
+        bio: true,
+        phone: true,
         role: true,
         isDeleted: true,
         deletedAt: true,
         createdAt: true,
         updatedAt: true,
       },
+    });
+  }
+
+  async getPreferences(userId: string) {
+    let pref = await this.prisma.userPreference.findUnique({ where: { userId } });
+    if (!pref) {
+      pref = await this.prisma.userPreference.create({ data: { userId } });
+    }
+    return pref;
+  }
+
+  async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
+    let pref = await this.prisma.userPreference.findUnique({ where: { userId } });
+    if (!pref) {
+      pref = await this.prisma.userPreference.create({ data: { userId, ...dto } });
+      return pref;
+    }
+
+    return this.prisma.userPreference.update({
+      where: { userId },
+      data: dto,
     });
   }
 }

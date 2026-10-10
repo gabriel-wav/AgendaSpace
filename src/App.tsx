@@ -9,6 +9,8 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import CheckEmail from "./pages/CheckEmail";
+import VerifyEmail from "./pages/VerifyEmail";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import FeedPage from "./pages/Feed";
@@ -22,6 +24,7 @@ import UserMyBookings from "./pages/user/MyBookings";
 import HostMySpaces from "./pages/host/MySpaces";
 import HostReceivedBookings from "./pages/host/ReceivedBookings";
 import Settings from "./pages/Settings";
+import NotificationsPage from "./pages/Notifications";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +51,8 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/check-email" element={<CheckEmail />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Protected — any authenticated user */}
             <Route path="/dashboard" element={
@@ -56,22 +61,22 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/spaces" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireVerified>
                 <UserSpaces />
               </ProtectedRoute>
             } />
             <Route path="/my-bookings" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireVerified>
                 <UserMyBookings />
               </ProtectedRoute>
             } />
             <Route path="/my-spaces" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireVerified>
                 <HostMySpaces />
               </ProtectedRoute>
             } />
             <Route path="/host/bookings" element={
-              <ProtectedRoute>
+              <ProtectedRoute requireVerified>
                 <HostReceivedBookings />
               </ProtectedRoute>
             } />
@@ -83,6 +88,11 @@ const App = () => (
             <Route path="/settings" element={
               <ProtectedRoute>
                 <Settings />
+              </ProtectedRoute>
+            } />
+            <Route path="/notifications" element={
+              <ProtectedRoute>
+                <NotificationsPage />
               </ProtectedRoute>
             } />
 

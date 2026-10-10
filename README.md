@@ -243,6 +243,18 @@ Todas as requisições autenticadas requerem o header `Authorization: Bearer <to
 |---|---|---|---|
 | `POST` | `/upload/:bucket` | Upload multipart (`spaces`, `avatars`, `feed`) | Autenticado |
 
+### 🔔 Notificações & Web Push (`/notifications`)
+| Método | Endpoint | Descrição | Acesso |
+|---|---|---|---|
+| `GET` | `/notifications` | Lista notificações in-app paginadas e total não lido | Autenticado |
+| `PATCH` | `/notifications/:id/read` | Marca notificação específica como lida | Próprio |
+| `PATCH` | `/notifications/read-all` | Marca todas as notificações do usuário como lidas | Próprio |
+| `GET` | `/notifications/push/public-key` | Retorna a chave pública VAPID para registro | Autenticado |
+| `GET` | `/notifications/push/subscriptions` | Lista dispositivos com push ativo do usuário (sem segredos) | Próprio |
+| `POST` | `/notifications/push/subscribe` | Cadastra ou reativa assinatura Web Push deste dispositivo | Próprio |
+| `POST` | `/notifications/push/unsubscribe` | Cancela a assinatura push do dispositivo atual | Próprio |
+| `POST` | `/notifications/push/test` | Envia notificação push de teste para validação imediata | Próprio |
+
 ---
 
 ## ⚡ Guia de Instalação e Execução Local
@@ -430,6 +442,32 @@ AgendaSpace/
 - **Pagamentos Simulados:** As modalidades PIX e Cartão de Crédito funcionam como simulações para fins acadêmicos e de validação de fluxo — **nenhum dado bancário real é processado ou faturado**.
 - **Upload Local:** Os arquivos são persistidos no diretório `public/uploads/` do servidor da aplicação. Em ambientes de produção corporativos, recomenda-se a substituição pelo envio direto a buckets S3/GCS.
 - **Transações Não-Distribuídas:** O feed (MongoDB) e as entidades relacionais (MySQL) operam de forma assíncrona; exclusões de postagens realizam a limpeza de suas dependências NoSQL via rotinas dedicadas no serviço.
+
+### 🔔 Notificações Web Push, VAPID e Requisitos de Ambiente
+1. **Push API e VAPID Sem Fornecedor Pago:**
+   - O AgendaSpace utiliza a especificação aberta **Web Push Protocol (RFC 8030 / RFC 8291)** com chaves VAPID geradas localmente via biblioteca open-source `web-push`.
+   - **Sem custos ou lock-in:** Não impõe fornecedores de push pagos ou serviços proprietários de terceiros (como OneSignal ou Firebase Cloud Messaging com SDKs pagos).
+   - Somente a chave pública (`VAPID_PUBLIC_KEY`) é exposta ao frontend; a chave privada (`VAPID_PRIVATE_KEY`) reside estritamente nas variáveis de ambiente do backend NestJS.
+2. **Requisito de HTTPS no Ambiente Publicado:**
+   - Em conformidade com as diretrizes do W3C e navegadores modernos, a **Push API e Service Workers exigem HTTPS obrigatório** em ambientes publicados/produção.
+   - Em desenvolvimento local, navegadores permitem execução sobre `http://localhost` e `http://127.0.0.1`.
+3. **Compatibilidade e Suporte de Navegadores:**
+   - **Desktop:** Suportado nativamente no Google Chrome, Microsoft Edge, Mozilla Firefox e Apple Safari 16+ (macOS Ventura ou superior).
+   - **Mobile Android:** Suportado nativamente no Chrome e Firefox para Android.
+   - **Mobile iOS:** Suportado a partir do iOS / iPadOS 16.4+, **exclusivamente quando o usuário adiciona o site à Tela de Início** (modo PWA standalone, suportado pelo `manifest.webmanifest`).
+   - **Navegação Anônima / Modos Restritos:** A maioria dos navegadores bloqueia intencionalmente o registro de Service Workers ou geração de chaves Push em abas anônimas para preservar a privacidade do usuário.
+4. **Execução em Segundo Plano vs. Sistema Operacional:**
+   - Em navegadores suportados com permissão concedida, os alertas chegam com a aba do aplicativo fechada.
+   - A entrega em segundo plano depende de o sistema operacional e o navegador não encerrarem processos de background (ex: modos de economia de bateria agressiva do Android ou fechamento forçado no iOS suprimem tarefas de segundo plano).
+5. **Prevenção de SSRF (Server-Side Request Forgery):**
+   - O backend valida rigorosamente os endpoints de push submetidos pelo cliente (`push-validator.util.ts`), rejeitando protocolos que não sejam `https:`, portas não padrão, endereços de loopback (`localhost`, `127.0.0.1`), endereços IP de redes privadas (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`), faixas de metadados de nuvem (`169.254.169.254`) e domínios internos (`.local`, `.internal`).
+6. **Isolamento de Contas e Limpeza no Logout:**
+   - Ao executar `signOut` no `AuthContext`, a aplicação desvincula a assinatura no backend e invoca `sub.unsubscribe()` localmente no navegador, impedindo que um novo usuário que faça login no mesmo navegador receba mensagens da conta anterior.
+   - Ao desativar o push nas Configurações de um dispositivo, apenas a assinatura daquele dispositivo específico é excluída; outros dispositivos do usuário continuam ativos.
+   - Ao desativar a preferência global de push na conta, o worker suprime todos os envios de push da conta sem excluir as inscrições de hardware.
+7. **Fila Persistente (Push Outbox) e Tratamento de Erros 404/410:**
+   - Os envios são enfileirados no MySQL (`push_outbox`) com bloqueio atômico de lease (`locked_until`), revalidação de preferências e retries com backoff exponencial.
+   - Quando um gateway de push responde com HTTP 404 ou 410 (Gone), a assinatura é imediatamente desativada/removida no banco sem afetar as notificações in-app nem os outros dispositivos cadastrados.
 
 ---
 

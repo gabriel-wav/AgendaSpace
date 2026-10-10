@@ -7,6 +7,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role?: string;
+  authVersion?: number;
 }
 
 @Injectable()
@@ -34,7 +35,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         fullName: true,
         role: true,
         avatarUrl: true,
+        bio: true,
+        phone: true,
+        emailVerifiedAt: true,
         isDeleted: true,
+        authVersion: true,
       },
     });
 
@@ -42,6 +47,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuário não encontrado, desativado ou banido');
     }
 
-    return user;
+    if (payload.authVersion !== undefined && user.authVersion !== payload.authVersion) {
+      throw new UnauthorizedException('Sessão revogada (senha ou 2FA alterado)');
+    }
+
+    const isVerified = user.emailVerifiedAt !== null;
+
+    return {
+      ...user,
+      isVerified,
+    };
   }
 }

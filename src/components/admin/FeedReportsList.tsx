@@ -18,7 +18,7 @@ interface Report {
   postPreview: { content: string; imageUrl: string } | null;
 }
 
-export function FeedReportsList() {
+export function FeedReportsList({ onResolved }: { onResolved?: () => void }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -42,8 +42,9 @@ export function FeedReportsList() {
   const handleResolve = async (id: string) => {
     try {
       await resolveReport(id);
-      toast({ title: 'Resolvido', description: 'Publicação excluída e denúncia resolvida.' });
+      toast({ title: 'Resolvido', description: 'Publicação excluída globalmente e denúncia resolvida.' });
       setReports(prev => prev.filter(r => r.id !== id));
+      if (onResolved) onResolved();
     } catch (e) {
       toast({ title: 'Erro', description: 'Não foi possível resolver.', variant: 'destructive' });
     }
@@ -52,7 +53,7 @@ export function FeedReportsList() {
   const handleDiscard = async (id: string) => {
     try {
       await discardReport(id);
-      toast({ title: 'Descartada', description: 'Denúncia ignorada com sucesso.' });
+      toast({ title: 'Descartada', description: 'Denúncia ignorada. A publicação será mantida.' });
       setReports(prev => prev.filter(r => r.id !== id));
     } catch (e) {
       toast({ title: 'Erro', description: 'Não foi possível descartar.', variant: 'destructive' });
@@ -87,8 +88,12 @@ export function FeedReportsList() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => handleDiscard(report.id)}>Descartar</Button>
-                <Button variant="destructive" size="sm" onClick={() => handleResolve(report.id)}>Remover Post</Button>
+                <Button variant="outline" size="sm" onClick={() => handleDiscard(report.id)} title="A publicação será mantida no feed global.">
+                  Ignorar (Manter Post)
+                </Button>
+                <Button variant="destructive" size="sm" onClick={() => handleResolve(report.id)} title="A publicação será removida permanentemente para todos.">
+                  Resolver (Excluir Post)
+                </Button>
               </div>
             </div>
           </CardHeader>

@@ -12,6 +12,9 @@ import { FeedModule } from './feed/feed.module';
 import { UsersModule } from './users/users.module';
 import { UploadModule } from './upload/upload.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { MailModule } from './mail/mail.module';
+
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -25,7 +28,10 @@ import { DashboardModule } from './dashboard/dashboard.module';
             '[AppModule] Variável de ambiente obrigatória "MONGODB_URI" não foi definida.',
           );
         }
-        return { uri: mongoUri };
+        return {
+          uri: mongoUri,
+          serverSelectionTimeoutMS: 5000,
+        };
       },
     }),
 
@@ -46,6 +52,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
     UsersModule,
     UploadModule,
     DashboardModule,
+    MailModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

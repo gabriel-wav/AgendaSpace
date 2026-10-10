@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEnum, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsBoolean, ValidateIf } from 'class-validator';
 import { Role } from '../../auth/enums/role.enum';
 
 export class UpdateUserDto {
@@ -21,4 +21,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isDeleted?: boolean;
+
+  @IsOptional()
+  @IsString()
+  bio?: string;
+
+  @IsOptional()
+  @ValidateIf(o => o.phone !== undefined && o.phone !== '')
+  @IsString()
+  phone?: string;
 }

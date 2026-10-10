@@ -11,6 +11,8 @@ export interface UserProfile {
   email: string;
   fullName: string;
   avatarUrl?: string | null;
+  bio?: string | null;
+  phone?: string | null;
   role: 'USER' | 'ADMIN';
   createdAt: string;
   updatedAt: string;
@@ -19,19 +21,40 @@ export interface UserProfile {
 export type UpdateUserProfilePayload = Partial<Omit<UserProfile, 'id' | 'email' | 'role' | 'createdAt' | 'updatedAt'>>;
 
 /**
- * GET /users/me
+ * GET /profiles/me
  * Retorna o perfil do usuário logado (geralmente usado para extrair dados a mais além da auth).
  */
 export async function fetchMyProfile(): Promise<UserProfile> {
-  const { data } = await api.get<UserProfile>('/users/me');
+  const { data } = await api.get<UserProfile>('/profiles/me');
   return data;
 }
 
 /**
- * PATCH /users/me
+ * PATCH /profiles/me
  * Atualiza o perfil do usuário logado.
  */
 export async function updateMyProfile(payload: UpdateUserProfilePayload): Promise<UserProfile> {
-  const { data } = await api.patch<UserProfile>('/users/me', payload);
+  const { data } = await api.patch<UserProfile>('/profiles/me', payload);
+  return data;
+}
+
+export interface UserPreferences {
+  emailNotifications: boolean;
+  emailBookings: boolean;
+  emailReminders: boolean;
+  loginAlerts: boolean;
+  pushNotifications: boolean;
+  marketingConsent: boolean;
+  showPhone: boolean;
+  hideFromFeed: boolean;
+}
+
+export async function getMyPreferences(): Promise<UserPreferences> {
+  const { data } = await api.get<UserPreferences>('/profiles/me/preferences');
+  return data;
+}
+
+export async function updateMyPreferences(payload: Partial<UserPreferences>): Promise<UserPreferences> {
+  const { data } = await api.patch<UserPreferences>('/profiles/me/preferences', payload);
   return data;
 }

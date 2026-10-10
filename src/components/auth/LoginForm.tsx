@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { resendLoginCode } from '@/lib/auth.api';
 
 interface LoginFormData {
   email: string;
   password: string;
 }
 
-/** Flushed-style input — sem borda, bg sólido, anel apenas no focus */
 function Field({
   id,
   label,
@@ -51,8 +51,14 @@ const inputCls = cn(
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { signIn } = useAuth();
+  const { signIn, verifyCodeLogin } = useAuth();
   const navigate = useNavigate();
+
+  const [step, setStep] = useState<'CREDENTIALS' | 'MFA_CODE'>('CREDENTIALS');
+  const [mfaData, setMfaData] = useState<{ challengeId: string; maskedEmail: string; password?: string; email?: string } | null>(null);
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [code, setCode] = useState('');
+  const [cooldown, setCooldown] = useState(0);
 
   const {
     register,
@@ -60,9 +66,41 @@ export function LoginForm() {
     formState: { errors },
   } = useForm<LoginFormData>();
 
-  const onSubmit = async (data: LoginFormData) => {
+  useEffect(() => {
+    let timer: any;
+    if (cooldown > 0) {
+      timer = setInterval(() => setCooldown((c) => c - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const onSubmitCredentials = async (data: LoginFormData) => {
     setLoading(true);
     const res = await signIn(data.email, data.password);
+    setLoading(false);
+
+    if (res.error) {
+      toast.error(res.error);
+    } else if (res.mfaRequired) {
+      setMfaData({ challengeId: res.challengeId!, maskedEmail: res.maskedEmail!, password: data.password, email: data.email });
+      setStep('MFA_CODE');
+      setCooldown(60);
+    } else {
+      toast.success('Bem-vindo(a) de volta!');
+      navigate('/dashboard');
+    }
+  };
+
+  const onSubmitMfa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code || !mfaData) return;
+
+    setLoading(true);
+    const res = await verifyCodeLogin(
+      mfaData.challengeId,
+      useRecovery ? undefined : code,
+      useRecovery ? code : undefined
+    );
     setLoading(false);
 
     if (res.error) {
@@ -73,9 +111,89 @@ export function LoginForm() {
     }
   };
 
+  const handleResend = async () => {
+    if (!mfaData || cooldown > 0) return;
+    setLoading(true);
+    try {
+      await resendLoginCode(mfaData.challengeId);
+      toast.success('Código reenviado.');
+      setCooldown(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erro ao reenviar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === 'MFA_CODE' && mfaData) {
+    return (
+      <div className="animate-in-up">
+        <div className="mb-8">
+          <button
+            onClick={() => { setStep('CREDENTIALS'); setCode(''); }}
+            className="flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
+          </button>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Verificação em duas etapas
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {useRecovery
+              ? 'Insira um dos seus códigos de recuperação de alta entropia.'
+              : `Enviamos um código para o endereço ${mfaData.maskedEmail}.`}
+          </p>
+        </div>
+
+        <form onSubmit={onSubmitMfa} className="space-y-4">
+          <Field id="code" label={useRecovery ? 'Código de Recuperação' : 'Código de Verificação'}>
+            <input
+              id="code"
+              type="text"
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder={useRecovery ? "ABC123XYZ9" : "000000"}
+              className={inputCls}
+              required
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={loading || !code}
+            className={cn(
+              'mt-6 w-full rounded-md py-2.5 text-sm font-medium bg-foreground text-background transition-opacity',
+              'hover:opacity-90 disabled:opacity-50'
+            )}
+          >
+            {loading ? 'Verificando...' : 'Confirmar'}
+          </button>
+        </form>
+
+        <div className="mt-6 flex flex-col space-y-3 text-center text-sm">
+          {!useRecovery && (
+            <button
+              onClick={handleResend}
+              disabled={loading || cooldown > 0}
+              className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              {cooldown > 0 ? `Reenviar código em ${cooldown}s` : 'Não recebi o código'}
+            </button>
+          )}
+          <button
+            onClick={() => { setUseRecovery(!useRecovery); setCode(''); }}
+            className="font-medium text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground"
+          >
+            {useRecovery ? 'Usar código por email' : 'Usar código de recuperação'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-in-up">
-      {/* Heading */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Entrar na sua conta
@@ -85,8 +203,7 @@ export function LoginForm() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        {/* Email */}
+      <form onSubmit={handleSubmit(onSubmitCredentials)} className="space-y-4" noValidate>
         <Field id="email" label="E-mail" error={errors.email?.message}>
           <input
             id="email"
@@ -105,7 +222,6 @@ export function LoginForm() {
           />
         </Field>
 
-        {/* Password */}
         <Field id="password" label="Senha" error={errors.password?.message}>
           <div className="relative">
             <input
@@ -124,55 +240,29 @@ export function LoginForm() {
               tabIndex={-1}
               onClick={() => setShowPassword((v) => !v)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-150"
-              aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
             >
-              {showPassword ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
         </Field>
 
-        {/* CTA — sólido preto/branco conforme modo */}
         <button
           type="submit"
           disabled={loading}
           className={cn(
-            'mt-6 w-full rounded-md py-2.5 text-sm font-medium',
-            'bg-foreground text-background',
-            'transition-opacity duration-150',
-            'hover:opacity-90 active:opacity-80',
-            'disabled:cursor-not-allowed disabled:opacity-50',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            'mt-6 w-full rounded-md py-2.5 text-sm font-medium bg-foreground text-background transition-opacity',
+            'hover:opacity-90 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
           )}
         >
-          {loading ? (
-            <span className="inline-flex items-center gap-2">
-              <svg
-                className="h-4 w-4 animate-spin"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Entrando...
-            </span>
-          ) : (
-            'Entrar'
-          )}
+          {loading ? 'Entrando...' : 'Entrar'}
         </button>
       </form>
 
-      {/* Footer link */}
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Não tem uma conta?{' '}
         <Link
           to="/register"
-          className="font-medium text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors duration-150"
+          className="font-medium text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground"
         >
           Cadastre-se
         </Link>

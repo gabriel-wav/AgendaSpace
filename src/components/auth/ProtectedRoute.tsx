@@ -7,11 +7,14 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   /** Require ADMIN role to access */
   requireAdmin?: boolean;
+  /** Require verified email to access */
+  requireVerified?: boolean;
 }
 
 export function ProtectedRoute({
   children,
   requireAdmin = false,
+  requireVerified = false,
 }: ProtectedRouteProps) {
   const { user, loading, isAdmin } = useAuth();
   const location = useLocation();
@@ -33,6 +36,11 @@ export function ProtectedRoute({
   // Route requires ADMIN role
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  // Route requires Verified Email
+  if (requireVerified && !user.isVerified) {
+    return <Navigate to="/settings" replace />;
   }
 
   return <>{children}</>;

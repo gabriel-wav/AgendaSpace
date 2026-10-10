@@ -14,6 +14,7 @@ import { SpacesService } from './spaces.service';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { VerifiedGuard } from '../auth/guards/verified.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -25,7 +26,7 @@ export class SpacesController {
    * Endpoint de criação de espaços.
    * Protegido por JwtAuthGuard - requer token Bearer JWT.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post()
   async create(
     @CurrentUser('id') userId: string,
@@ -53,7 +54,7 @@ export class SpacesController {
    * Listagem de anúncios próprios do usuário autenticado (anfitrião).
    * Obtém a identidade estritamente do token JWT autenticado.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Get('mine')
   async findMine(@CurrentUser('id') userId: string) {
     return this.spacesService.findByOwner(userId);
@@ -75,7 +76,7 @@ export class SpacesController {
    * Atualização de um espaço.
    * Rota protegida por autenticação.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -89,7 +90,7 @@ export class SpacesController {
    * Desativação de um espaço.
    * Rota protegida por autenticação.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Delete(':id')
   async remove(
     @Param('id') id: string,

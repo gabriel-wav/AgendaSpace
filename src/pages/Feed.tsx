@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FeedReportsList } from '@/components/admin/FeedReportsList';
 export default function FeedPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -26,24 +27,34 @@ export default function FeedPage() {
   const [isReporting, setIsReporting] = useState(false);
   const { uploadFile } = useFileUpload();
 
+  const loadData = useCallback(async () => {
+    try {
+      const [spacesData, postsData] = await Promise.all([
+        fetchSpaces(true),
+        fetchGlobalPosts()
+      ]);
+      setSpaces(spacesData);
+      setPosts(postsData as unknown as FeedPost[]);
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Não foi possível carregar o feed.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
   // Load spaces and initial posts
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [spacesData, postsData] = await Promise.all([
-          fetchSpaces(true), // only active
-          fetchGlobalPosts()
-        ]);
-        setSpaces(spacesData);
-        setPosts(postsData as unknown as FeedPost[]);
-      } catch (error) {
-        toast({ title: 'Erro', description: 'Não foi possível carregar o feed.', variant: 'destructive' });
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
-  }, [toast]);
+  }, [loadData]);
+
+  const refreshFeed = useCallback(async () => {
+    try {
+      const postsData = await fetchGlobalPosts();
+      setPosts(postsData as unknown as FeedPost[]);
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
 
   // Toggle like on a post
   const handleLike = useCallback(async (postId: string) => {
@@ -150,8 +161,7 @@ export default function FeedPage() {
         });
 
         // Recarrega todo o feed para obter os relacionamentos enriquecidos do banco
-        const postsData = await fetchGlobalPosts();
-        setPosts(postsData as unknown as FeedPost[]);
+        await refreshFeed();
         toast({ title: 'Sucesso', description: 'Publicação criada!' });
       } catch (error: any) {
         toast({ title: 'Erro', description: error.response?.data?.message || 'Não foi possível criar publicação.', variant: 'destructive' });
@@ -177,8 +187,7 @@ export default function FeedPage() {
     try {
       await apiDeleteComment(commentId);
       // Revalide a prévia para recuperar o próximo mais recente
-      const postsData = await fetchGlobalPosts();
-      setPosts(postsData as unknown as FeedPost[]);
+      await refreshFeed();
       toast({ title: 'Sucesso', description: 'Comentário excluído.' });
     } catch (error: any) {
       toast({ title: 'Erro', description: error.response?.data?.message || 'Não foi possível excluir o comentário.', variant: 'destructive' });
@@ -255,52 +264,117 @@ export default function FeedPage() {
         </p>
       </div>
 
-      {/* New post input */}
-      <div className="mb-8">
-        <NewPostInput spaces={spaces} onSubmit={handleNewPost} />
-      </div>
+      {user?.role === 'ADMIN' ? (
+        <Tabs defaultValue="posts" className="w-full">
+          <TabsList className="mb-6">
+            <TabsTrigger value="posts">Publicações</TabsTrigger>
+            <TabsTrigger value="reports">Denúncias</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="posts">
+            {/* New post input */}
+            <div className="mb-8">
+              <NewPostInput spaces={spaces} onSubmit={handleNewPost} />
+            </div>
 
-      {/* Divider with label */}
-      <div className="relative mb-8">
-        <div className="divider" />
-        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-[11px] uppercase tracking-widest text-muted-foreground/50">
-          Publicações recentes
-        </span>
-      </div>
+            {/* Divider with label */}
+            <div className="relative mb-8">
+              <div className="divider" />
+              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-[11px] uppercase tracking-widest text-muted-foreground/50">
+                Publicações recentes
+              </span>
+            </div>
 
-      {/* Posts list */}
-      {loading ? (
-        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
-      ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-24 text-center">
-          <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-            <span className="text-2xl">📷</span>
-          </div>
-          <p className="text-sm font-medium text-foreground">Nenhuma publicação ainda</p>
-          <p className="text-xs text-muted-foreground">
-            Seja o primeiro a compartilhar um espaço incrível.
-          </p>
-        </div>
+            {/* Posts list */}
+            {loading ? (
+              <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
+            ) : posts.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-24 text-center">
+                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                  <span className="text-2xl">📷</span>
+                </div>
+                <p className="text-sm font-medium text-foreground">Nenhuma publicação ainda</p>
+                <p className="text-xs text-muted-foreground">
+                  Seja o primeiro a compartilhar um espaço incrível.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {posts.map((post) => {
+                  const canDelete = user?.role === 'ADMIN' || user?.id === post.author.id;
+                  return (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      onLike={handleLike}
+                      onComment={handleComment}
+                      onDelete={canDelete ? handleDeletePost : undefined}
+                      onDeleteComment={handleDeleteComment}
+                      onHide={user ? handleHidePost : undefined}
+                      onReport={user ? handleReportPost : undefined}
+                      onViewAllComments={setSelectedPostId}
+                      currentUser={user}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="reports">
+            <FeedReportsList onResolved={refreshFeed} />
+          </TabsContent>
+        </Tabs>
       ) : (
-        <div className="space-y-8">
-          {posts.map((post) => {
-            const canDelete = user?.role === 'ADMIN' || user?.id === post.author.id;
-            return (
-              <PostCard
-                key={post.id}
-                post={post}
-                onLike={handleLike}
-                onComment={handleComment}
-                onDelete={canDelete ? handleDeletePost : undefined}
-                onDeleteComment={handleDeleteComment}
-                onHide={user ? handleHidePost : undefined}
-                onReport={user ? handleReportPost : undefined}
-                onViewAllComments={setSelectedPostId}
-                currentUser={user}
-              />
-            );
-          })}
-        </div>
+        <>
+          {/* New post input */}
+          <div className="mb-8">
+            <NewPostInput spaces={spaces} onSubmit={handleNewPost} />
+          </div>
+
+          {/* Divider with label */}
+          <div className="relative mb-8">
+            <div className="divider" />
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-[11px] uppercase tracking-widest text-muted-foreground/50">
+              Publicações recentes
+            </span>
+          </div>
+
+          {/* Posts list */}
+          {loading ? (
+            <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
+          ) : posts.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-24 text-center">
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                <span className="text-2xl">📷</span>
+              </div>
+              <p className="text-sm font-medium text-foreground">Nenhuma publicação ainda</p>
+              <p className="text-xs text-muted-foreground">
+                Seja o primeiro a compartilhar um espaço incrível.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {posts.map((post) => {
+                const canDelete = user?.role === 'ADMIN' || user?.id === post.author.id;
+                return (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onLike={handleLike}
+                    onComment={handleComment}
+                    onDelete={canDelete ? handleDeletePost : undefined}
+                    onDeleteComment={handleDeleteComment}
+                    onHide={user ? handleHidePost : undefined}
+                    onReport={user ? handleReportPost : undefined}
+                    onViewAllComments={setSelectedPostId}
+                    currentUser={user}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {selectedPostId && (

@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -34,35 +36,71 @@ export class UsersController {
   }
 
   /**
+   * GET /profiles/me
+   * Retorna os dados do próprio perfil.
+   */
+  @Get('me')
+  async getProfile(@CurrentUser('id') userId: string) {
+    return this.usersService.findOne(userId);
+  }
+
+  @Get('me/preferences')
+  async getPreferences(@CurrentUser('id') userId: string) {
+    return this.usersService.getPreferences(userId);
+  }
+
+  @Patch('me/preferences')
+  async updatePreferences(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdatePreferencesDto,
+  ) {
+    return this.usersService.updatePreferences(userId, dto);
+  }
+
+  /**
+   * PATCH /profiles/me
+   * Atualiza dados do próprio usuário (perfil).
+   */
+  @Patch('me')
+  async updateProfile(
+    @CurrentUser('id') userId: string,
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    return this.usersService.update(userId, updateProfileDto);
+  }
+
+  /**
    * GET /profiles/:id
    * Busca um único usuário pelo ID.
    */
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.usersService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: { id: string; role: string },
+  ) {
+    const user = await this.usersService.findOne(id);
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== id) {
+      const pref = await this.usersService.getPreferences(id);
+      const { phone, email, ...publicData } = user;
+      if (pref.showPhone) {
+        return { ...publicData, phone };
+      }
+      return publicData;
+    }
+    return user;
   }
 
   /**
    * PATCH /profiles/:id
-   * Atualiza dados do usuário.
-   * - ADMIN pode alterar qualquer campo (inclusive role) de qualquer usuário.
-   * - Usuários comuns só podem alterar o próprio perfil (sem mudar role).
+   * Atualiza dados do usuário (ADMIN).
    */
   @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
   async update(
     @Param('id') id: string,
-    @CurrentUser() currentUser: { id: string; role: string },
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    // Se o usuário não é ADMIN, só pode editar o próprio perfil e não pode mudar o role
-    if (currentUser.role !== Role.ADMIN) {
-      if (currentUser.id !== id) {
-        throw new ForbiddenException('Você não tem permissão para editar outro usuário.');
-      }
-      // Remove role do DTO para evitar escalação de privilégios
-      delete updateUserDto.role;
-    }
-
     return this.usersService.update(id, updateUserDto);
   }
 

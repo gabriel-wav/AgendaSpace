@@ -170,6 +170,16 @@ export class FeedService {
       }
     }
 
+    // Filter authors that have hideFromFeed = true
+    const hiddenAuthors = await this.prisma.userPreference.findMany({
+      where: { hideFromFeed: true },
+      select: { userId: true },
+    });
+    const hiddenAuthorIds = hiddenAuthors.map(h => h.userId);
+    if (hiddenAuthorIds.length > 0) {
+      match.authorId = { $nin: hiddenAuthorIds };
+    }
+
     const posts = await this.postModel.aggregate([
       {
         $match: match,
@@ -240,6 +250,15 @@ export class FeedService {
       if (hiddenIds.length > 0) {
         match._id = { ...match._id, $nin: hiddenIds };
       }
+    }
+
+    const hiddenAuthors = await this.prisma.userPreference.findMany({
+      where: { hideFromFeed: true },
+      select: { userId: true },
+    });
+    const hiddenAuthorIds = hiddenAuthors.map(h => h.userId);
+    if (hiddenAuthorIds.length > 0) {
+      match.authorId = { $nin: hiddenAuthorIds };
     }
 
     const posts = await this.postModel.aggregate([
@@ -606,8 +625,10 @@ export class FeedService {
 
     try {
       await this.deletePost(report.postId.toString(), user);
-    } catch (e) {
-      // Ignorar se já foi excluído
+    } catch (e: any) {
+      if (!(e instanceof NotFoundException)) {
+        throw e;
+      }
     }
 
     await this.reportModel.updateMany(

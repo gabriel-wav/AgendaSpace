@@ -15,6 +15,7 @@ import { FeedService } from './feed.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { VerifiedGuard } from '../auth/guards/verified.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -26,7 +27,7 @@ export class FeedController {
    * Publica uma nova foto/post vinculada a um espaço.
    * Rota protegida: extrai o authorId do usuário logado via JWT.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('posts')
   async createPost(
     @CurrentUser('id') authorId: string,
@@ -69,7 +70,7 @@ export class FeedController {
    * Adiciona ou remove curtida de uma publicação (Toggle Like).
    * Rota protegida: garante 1 curtida por usuário autenticado.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @HttpCode(HttpStatus.OK)
   @Post('posts/:postId/like')
   async toggleLike(
@@ -83,7 +84,7 @@ export class FeedController {
    * Adiciona um comentário a uma publicação.
    * Rota protegida: registra o authorId do usuário logado.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('posts/:postId/comments')
   async addComment(
     @Param('postId') postId: string,
@@ -97,7 +98,7 @@ export class FeedController {
    * Exclusão moderada de Post.
    * Rota protegida: avalia autor, ADMIN ou dono do espaço.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Delete('posts/:postId')
   async deletePost(
     @Param('postId') postId: string,
@@ -110,7 +111,7 @@ export class FeedController {
    * Exclusão moderada de Comentário.
    * Rota protegida: avalia autor, ADMIN ou dono do espaço.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Delete('comments/:commentId')
   async deleteComment(
     @Param('commentId') commentId: string,
@@ -119,7 +120,7 @@ export class FeedController {
     return this.feedService.deleteComment(commentId, user);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('posts/:postId/hide')
   async hidePost(
     @Param('postId') postId: string,
@@ -128,7 +129,7 @@ export class FeedController {
     return this.feedService.hidePost(postId, userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('posts/:postId/unhide')
   async unhidePost(
     @Param('postId') postId: string,
@@ -137,7 +138,7 @@ export class FeedController {
     return this.feedService.unhidePost(postId, userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('posts/:postId/report')
   async reportPost(
     @Param('postId') postId: string,
@@ -158,7 +159,7 @@ export class FeedController {
     return this.feedService.getPostComments(postId, cursor, limit);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Get('reports')
   async getReports(
     @CurrentUser() user: { id: string; role: string },
@@ -169,7 +170,7 @@ export class FeedController {
     return this.feedService.getReports(user, limit, cursor);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('reports/:reportId/resolve')
   async resolveReport(
     @Param('reportId') reportId: string,
@@ -178,7 +179,7 @@ export class FeedController {
     return this.feedService.resolveReport(reportId, user);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedGuard)
   @Post('reports/:reportId/discard')
   async discardReport(
     @Param('reportId') reportId: string,

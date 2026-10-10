@@ -1,62 +1,26 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, saveToken, clearToken, getToken, decodeToken, isTokenValid } from '@/lib/api';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-/** Shape of the JWT payload produced by NestJS JwtStrategy */
-interface JwtPayload {
-  sub: string;    // User UUID
-  email: string;
-  exp: number;
-  iat: number;
-}
-
-/** Enriched user object (decoded from token + profile endpoint) */
-export interface AuthUser {
-  id: string;
-  email: string;
-  fullName: string;
-  avatarUrl: string | null;
-  role: 'ADMIN' | 'USER';
-}
+import { isTokenValid, clearToken } from '@/lib/api';
+import { login, register, fetchSession, User, logout as apiLogout } from '@/lib/auth.api';
 
 interface AuthContextType {
-  /** The full authenticated user (null when logged out) */
-  user: AuthUser | null;
-  /** Alias para compatibilidade com consumidores legados de 'profile' */
-  profile: AuthUser | null;
-  /** True while checking token validity on mount */
+  user: User | null;
+  profile: User | null;
   loading: boolean;
-  /** True when the user holds ADMIN role */
   isAdmin: boolean;
-  /** Authenticate against POST /auth/login */
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  /** Create an account via POST /auth/register (sempre USER) */
-  signUp: (
-    email: string,
-    password: string,
-    fullName: string
-  ) => Promise<{ error: string | null }>;
-  /** Clear token and user state */
+  signIn: (email: string, password: string) => Promise<{ error: string | null; mfaRequired?: boolean; challengeId?: string; maskedEmail?: string }>;
+  verifyCodeLogin: (challengeId: string, code?: string, recoveryCode?: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ pendingVerification?: boolean; error: string | null }>;
   signOut: () => void;
-  /** Recarrega os dados do usuário a partir de GET /auth/me */
   refreshUser: () => Promise<void>;
+  setUser: (user: User | null) => void;
 }
-
-// ─── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /**
-   * Fetch the current user's profile from the API using the stored token.
-   * Called once on mount if a valid token exists or on refresh.
-   */
   const hydrateUser = useCallback(async () => {
     if (!isTokenValid()) {
       clearToken();
@@ -66,11 +30,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // GET /auth/me — returns the authenticated user's profile from MySQL via Prisma
-      const { data } = await api.get<AuthUser>('/auth/me');
+      const data = await fetchSession();
       setUser(data);
     } catch {
-      // Token was rejected by the server (revoked, schema change, etc.)
       clearToken();
       setUser(null);
     } finally {
@@ -78,64 +40,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // On mount: restore session from localStorage if valid
   useEffect(() => {
     hydrateUser();
   }, [hydrateUser]);
 
-  // ─── signIn ────────────────────────────────────────────────────────────────
-  const signIn = useCallback(
-    async (email: string, password: string): Promise<{ error: string | null }> => {
-      try {
-        const { data } = await api.post<{ access_token: string; user: AuthUser }>(
-          '/auth/login',
-          { email, password }
-        );
-
-        saveToken(data.access_token);
-        setUser(data.user);
-        return { error: null };
-      } catch (err: any) {
-        const message =
-          err.response?.data?.message ??
-          err.response?.data?.error ??
-          'Falha ao autenticar. Verifique suas credenciais.';
-        return { error: message };
+  const signIn = useCallback(async (email: string, password: string): Promise<{ error: string | null; mfaRequired?: boolean; challengeId?: string; maskedEmail?: string }> => {
+    try {
+      const res = await login({ email, password });
+      if (res.status === 'MFA_REQUIRED') {
+        return { error: null, mfaRequired: true, challengeId: res.challengeId, maskedEmail: res.maskedEmail };
       }
-    },
-    []
-  );
+      setUser(res.user);
+      return { error: null };
+    } catch (err: any) {
+      const message = err.response?.data?.message ?? err.response?.data?.error ?? 'Falha ao autenticar. Verifique suas credenciais.';
+      return { error: Array.isArray(message) ? message[0] : message };
+    }
+  }, []);
 
-  // ─── signUp ────────────────────────────────────────────────────────────────
-  const signUp = useCallback(
-    async (
-      email: string,
-      password: string,
-      fullName: string
-    ): Promise<{ error: string | null }> => {
-      try {
-        const { data } = await api.post<{ access_token: string; user: AuthUser }>(
-          '/auth/register',
-          { email, password, fullName }
-        );
+  const verifyCodeLogin = useCallback(async (challengeId: string, code?: string, recoveryCode?: string): Promise<{ error: string | null }> => {
+    try {
+      const res = await import('@/lib/auth.api').then(m => m.verifyLoginCode({ challengeId, code, recoveryCode }));
+      setUser(res.user);
+      return { error: null };
+    } catch (err: any) {
+      const message = err.response?.data?.message ?? err.response?.data?.error ?? 'Falha na verificação do código.';
+      return { error: Array.isArray(message) ? message[0] : message };
+    }
+  }, []);
 
-        saveToken(data.access_token);
-        setUser(data.user);
-        return { error: null };
-      } catch (err: any) {
-        const message =
-          err.response?.data?.message ??
-          err.response?.data?.error ??
-          'Falha ao criar conta.';
-        return { error: Array.isArray(message) ? message[0] : message };
+  const signUp = useCallback(async (email: string, password: string, fullName: string): Promise<{ pendingVerification?: boolean; error: string | null }> => {
+    try {
+      const res = await register({ email, password, fullName });
+      if (res.status === 'PENDING_VERIFICATION') {
+        return { pendingVerification: true, error: null };
       }
-    },
-    []
-  );
+      return { error: null };
+    } catch (err: any) {
+      const message = err.response?.data?.message ?? err.response?.data?.error ?? 'Falha ao criar conta.';
+      return { error: Array.isArray(message) ? message[0] : message };
+    }
+  }, []);
 
-  // ─── signOut ───────────────────────────────────────────────────────────────
-  const signOut = useCallback(() => {
-    clearToken();
+  const signOut = useCallback(async () => {
+    try {
+      const { disablePushOnCurrentDevice } = await import('@/lib/push.api');
+      await disablePushOnCurrentDevice();
+    } catch {
+      // Falha silenciosa para não impedir o encerramento da sessão
+    }
+    apiLogout();
     setUser(null);
     window.location.replace('/login');
   }, []);
@@ -146,15 +100,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     isAdmin: user?.role === 'ADMIN',
     signIn,
+    verifyCodeLogin,
     signUp,
     signOut,
     refreshUser: hydrateUser,
+    setUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useAuth() {
   const context = useContext(AuthContext);

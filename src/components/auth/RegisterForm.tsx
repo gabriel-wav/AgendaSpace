@@ -106,6 +106,8 @@ export function RegisterForm() {
 
     if (res.error) {
       toast.error(res.error);
+    } else if (res.pendingVerification) {
+      navigate('/check-email', { state: { email: data.email } });
     } else {
       toast.success('Conta criada com sucesso!');
       navigate('/dashboard');
