@@ -8,6 +8,9 @@
 [![MySQL](https://img.shields.io/badge/Database-MySQL%208%20%2B%20Prisma-4479A1?logo=mysql&logoColor=white)](https://www.prisma.io/)
 [![MongoDB](https://img.shields.io/badge/Database-MongoDB%20via%20Mongoose-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![TailwindCSS](https://img.shields.io/badge/Styling-TailwindCSS%20%2B%20shadcn%2Fui-06B6D4?logo=tailwindcss&logoColor=white)](https://ui.shadcn.com/)
+[![Security](https://img.shields.io/badge/Security-2FA%20%2B%20Password%20Recovery-10B981?logo=shield&logoColor=white)](https://jwt.io/)
+[![Email](https://img.shields.io/badge/Email-SMTP%20%2B%20Outbox%20Worker-009688?logo=gmail&logoColor=white)](https://nodemailer.com/)
+[![Web Push](https://img.shields.io/badge/Web%20Push-RFC%208030%20(VAPID)-F97316?logo=pwa&logoColor=white)](https://datatracker.ietf.org/doc/html/rfc8030)
 
 ---
 
@@ -29,6 +32,10 @@ Assista ao fluxo de uso e visão geral da plataforma:
   - [5. Feed Social da Comunidade (NoSQL)](#5-feed-social-da-comunidade-nosql)
   - [6. Painel Administrativo e Relatórios](#6-painel-administrativo-e-relatórios)
   - [7. Sistema de Upload e Resiliência de Mídia](#7-sistema-de-upload-e-resiliência-de-mídia)
+  - [8. Segurança Avançada, 2FA e Recuperação de Senha](#8-segurança-avançada-2fa-e-recuperação-de-senha)
+  - [9. Infraestrutura de Mensageria e Email Transacional (Outbox Worker)](#9-infraestrutura-de-mensageria-e-email-transacional-outbox-worker)
+  - [10. Central de Notificações In-App e Web Push (RFC 8030)](#10-central-de-notificações-in-app-e-web-push-rfc-8030)
+  - [11. Privacidade, Preferências e Configurações de Perfil](#11-privacidade-preferências-e-configurações-de-perfil)
 - [🔌 Contratos e Endpoints da API REST](#-contratos-e-endpoints-da-api-rest)
 - [⚡ Guia de Instalação e Execução Local](#-guia-de-instalação-e-execução-local)
 - [📁 Estrutura de Pastas do Projeto](#-estrutura-de-pastas-do-projeto)
@@ -175,35 +182,121 @@ O AgendaSpace emprega uma **arquitetura híbrida de persistência**, separando d
 
 ---
 
+### 8. Segurança Avançada, 2FA e Recuperação de Senha
+- **Confirmação Obrigatória de E-mail:**
+  - Todo novo cadastro recebe status pendente de verificação (`emailVerifiedAt = null`).
+  - O sistema despacha automaticamente um desafio transacional com link assinado e token criptográfico de alta entropia (`crypto.randomBytes(32)`), armazenado sob digest SHA-256 (`AuthChallenge`).
+  - **Guards e Proteção de Rotas:** O backend aplica o guard `VerifiedGuard` e o frontend utiliza a flag `requireVerified` em rotas vitais (criação de espaços, reservas, aprovações), redirecionando usuários não verificados para a tela `/check-email` com suporte a reenvio inteligente com cooldown.
+- **Autenticação em Dois Fatores (2FA via E-mail):**
+  - Usuários podem ativar a proteção em duas etapas no painel de Configurações (`/settings`), mediante confirmação com código OTP de 6 dígitos enviado por e-mail.
+  - **Códigos de Recuperação de Emergência:** Ao ativar o 2FA, o sistema gera 8 códigos de backup descartáveis (armazenados como digests SHA-256 em `recovery_codes`), permitindo acesso à conta mesmo sem acesso momentâneo à caixa postal. Suporte a regeneração segura sob senha e código.
+  - **Desafio de Login em 2 Etapas:** Quando um usuário com 2FA faz login, o endpoint não expede o token JWT de imediato; em vez disso, retorna `requires2fa: true` com um `challengeToken` de curta duração (5 minutos). A sessão final só é concedida após a validação do código OTP ou de um código de emergência.
+- **Recuperação de Senha de Ponta a Ponta (`/forgot-password` e `/reset-password`):**
+  - **Página de Solicitação Pública:** Acessível diretamente pelo link *"Esqueci minha senha"* no formulário de login.
+  - **Proteção Anti-Enumeração:** O endpoint `POST /auth/password/forgot` retorna exatamente a mesma resposta genérica (*"Se houver uma conta disponível para esse email, enviaremos as instruções de recuperação."*) tanto para e-mails cadastrados quanto para inexistentes, mitigando ataques de força bruta e varredura de usuários.
+  - **Imunidade Concorrente (Anti-Race Condition):** A validação e o consumo do token de redefinição são executados dentro de transação atômica MySQL via `tx.authChallenge.updateMany({ where: { tokenDigest, consumedAt: null } })`. Caso duas requisições concorrentes tentem usar o mesmo token em paralelo, apenas uma tem sucesso (`count === 1`) e a outra é imediatamente rejeitada (`count === 0`).
+  - **Invalidação Global de Sessões (`authVersion`):** A redefinição de senha incrementa o campo `authVersion` do usuário. O `JwtStrategy` compara esse valor a cada requisição, derrubando instantaneamente todas as sessões e tokens JWT emitidos previamente em outros dispositivos.
+  - **Preservação de Integridade:** O processo não altera `role`, `emailVerifiedAt`, `isDeleted` ou `isTwoFactorEnabled`.
+  - **Alerta de Segurança:** Ao concluir a redefinição, a fila de mensageria dispara o e-mail transacional `PASSWORD_CHANGED` informando data, horário e orientações de segurança.
+
+---
+
+### 9. Infraestrutura de Mensageria e Email Transacional (Outbox Worker)
+- **Padrão Transacional Outbox (`email_outbox`):**
+  - Nenhuma requisição HTTP do usuário depende de conexão externa com servidores SMTP. O backend enfileira o e-mail no MySQL dentro da mesma transação de negócio, garantindo entrega resiliente mesmo diante de oscilações de rede ou indisponibilidade temporária do provedor.
+- **Worker Assíncrono com Lease Atômico:**
+  - O `MailWorker` executa em segundo plano com bloqueio otimista/lease atômico (`locked_until`, `locked_by`), processando lotes com limite de tentativas (`maxAttempts = 3`) e backoff progressivo em caso de falha.
+- **Compatibilidade Universal com Provedores SMTP:**
+  - Suporta qualquer provedor SMTP padrão da indústria (Brevo / Sendinblue, Mailtrap, Amazon SES, SendGrid, Gmail SMTP ou servidores locais) configurável via variáveis de ambiente (`MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM`, `MAIL_SECURE`).
+- **Templates Responsivos e Sanitização XSS:**
+  - Mais de 10 templates customizados em HTML e texto plano com escape estrito de caracteres (`escapeHtml`) para prevenir injeção de HTML/XSS:
+    - Confirmação de Cadastro (`EMAIL_CONFIRMATION`)
+    - Solicitação de Recuperação de Senha (`PASSWORD_RECOVERY`)
+    - Notificação de Senha Alterada (`PASSWORD_CHANGED`)
+    - Código de Verificação 2FA (`2FA_CODE`)
+    - Solicitação, Aprovação, Rejeição, Cancelamento e Confirmação de Reservas (`BOOKING_*`)
+    - Lembrete prévio de Reserva (`BOOKING_REMINDER`)
+    - Alerta de Novo Login / Ação Sensível (`LOGIN_ALERT`, `SECURITY_ALERT`)
+    - Confirmação de Novo E-mail (`EMAIL_CHANGE`)
+
+---
+
+### 10. Central de Notificações In-App e Web Push (RFC 8030)
+- **Sino Interativo no Header (`NotificationsBell`):**
+  - Exibe contador dinâmico de notificações não lidas em tempo real.
+  - Dropdown com pré-visualização das mensagens mais recentes e atalho direto para a central completa.
+- **Central Dedicada de Notificações (`/notifications`):**
+  - Listagem paginada de avisos in-app com marcação individual ou em massa como lida (*"Marcar todas como lidas"*).
+- **Web Push Protocol Nativo (Sem Serviços Pagos):**
+  - Em conformidade com as RFCs 8030 e 8291, o sistema utiliza o padrão Web Push W3C com criptografia VAPID nativa (`web-push`). Sem dependência de plataformas proprietárias ou intermediários pagos.
+- **PWA e Service Worker (`public/sw.js`):**
+  - Suporte a exibição de alertas no sistema operacional mesmo com o navegador em segundo plano ou aba fechada.
+  - Compatibilidade com dispositivos móveis e desktop, incluindo suporte ao modo standalone no iOS (PWA adicionado à Tela de Início via `manifest.webmanifest`).
+- **Push Outbox e Proteção Contra SSRF:**
+  - Notificações push são enfileiradas na tabela `push_outbox` com lease seguro.
+  - Validação estrita do endpoint submetido pelo navegador (`push-validator.util.ts`), rejeitando IPs privados, endereços de loopback e metadados de nuvem para proteção absoluta contra Server-Side Request Forgery.
+  - Desativação automática de subscrições expiradas ou canceladas (HTTP 404/410 Gone).
+
+---
+
+### 11. Privacidade, Preferências e Configurações de Perfil
+- **Gerenciamento Unificado de Configurações (`/settings`):**
+  - Aba de **Perfil:** Atualização de nome, biografia, telefone de contato e foto de avatar com upload validado.
+  - Aba de **Segurança:** Gestão completa de 2FA, exibição e regeneração de códigos de emergência, troca segura de senha autenticada e alteração de e-mail de acesso.
+  - Aba de **Preferências e Privacidade:**
+    - Controle de visibilidade do telefone no perfil público (`showPhone`).
+    - Opção de ocultar atividades no feed comunitário (`hideFromFeed`).
+    - Habilitação granular de canais de notificação: e-mails de reserva, lembretes, alertas de segurança e notificações push.
+    - Gerenciamento de dispositivos inscritos no Web Push com envio de notificação de teste imediata.
+
+---
+
 ## 🔌 Contratos e Endpoints da API REST
 
 Todas as requisições autenticadas requerem o header `Authorization: Bearer <token_jwt>`.
 
-### 🔑 Autenticação (`/auth`)
+### 🔑 Autenticação e Segurança (`/auth`)
 | Método | Endpoint | Descrição | Acesso |
 |---|---|---|---|
-| `POST` | `/auth/register` | Cadastra um novo usuário com papel `USER` | Público |
-| `POST` | `/auth/login` | Autentica com email e senha e retorna o token JWT | Público |
+| `POST` | `/auth/register` | Cadastra um novo usuário com papel `USER` e envia email de confirmação | Público |
+| `POST` | `/auth/login` | Autentica com email e senha (retorna JWT ou desafio de 2FA se ativo) | Público |
 | `GET` | `/auth/me` | Retorna o payload decodificado do token atual | Autenticado |
+| `POST` | `/auth/verify-email` | Confirma o endereço de email através do token recebido | Público |
+| `POST` | `/auth/resend-verification` | Reenvia o email com link/código de confirmação | Público |
+| `POST` | `/auth/login/verify-code` | Valida o código 2FA (ou código de recuperação) e emite o token JWT | Público |
+| `POST` | `/auth/login/resend-code` | Reenvia um novo código OTP de 2FA para o login em andamento | Público |
+| `POST` | `/auth/password/forgot` | Solicita recuperação de senha (resposta genérica anti-enumeração) | Público |
+| `POST` | `/auth/password/reset` | Redefine a senha via token com consumo atômico e invalidação de sessões | Público |
+| `GET` | `/auth/security` | Consulta o status de 2FA e segurança da conta | Autenticado |
+| `POST` | `/auth/2fa/enable/init` | Inicia ativação de 2FA enviando código OTP por email | Autenticado |
+| `POST` | `/auth/2fa/enable/confirm` | Confirma código OTP, ativa 2FA e gera 8 códigos de recuperação | Autenticado |
+| `POST` | `/auth/2fa/disable/init` | Inicia desativação de 2FA enviando código OTP por email | Autenticado |
+| `POST` | `/auth/2fa/disable/confirm` | Confirma código OTP e desativa a autenticação em 2 etapas | Autenticado |
+| `POST` | `/auth/2fa/recovery/regenerate/init` | Inicia regeneração de recovery codes com envio de OTP | Autenticado |
+| `POST` | `/auth/2fa/recovery/regenerate/confirm` | Confirma código OTP e gera 8 novos códigos de recuperação | Autenticado |
+| `POST` | `/auth/change-email` | Inicia alteração de email e envia confirmação para o novo endereço | Autenticado |
+| `POST` | `/auth/change-email/confirm` | Conclui a alteração do email via token criptográfico | Autenticado |
+| `POST` | `/auth/password/change/init` | Valida senha atual e inicia alteração de senha autenticada | Autenticado |
+| `POST` | `/auth/password/change/confirm` | Confirma nova senha (com validação 2FA se ativo) e invalida sessões | Autenticado |
 
 ### 🏢 Espaços (`/spaces`)
 | Método | Endpoint | Descrição | Acesso |
 |---|---|---|---|
 | `GET` | `/spaces?activeOnly=true&q=termo` | Lista espaços do catálogo público com busca | Público |
-| `GET` | `/spaces/mine` | Lista os espaços cadastrados pelo usuário autenticado | Anfitrião |
+| `GET` | `/spaces/mine` | Lista os espaços cadastrados pelo usuário autenticado | Anfitrião (Verificado) |
 | `GET` | `/spaces/:id` | Retorna os detalhes completos de um espaço específico | Público / Autenticado |
-| `POST` | `/spaces` | Cria um novo espaço | Autenticado |
+| `POST` | `/spaces` | Cria um novo espaço | Autenticado (Verificado) |
 | `PATCH` | `/spaces/:id` | Atualiza informações de um espaço próprio | Dono / ADMIN |
 | `DELETE` | `/spaces/:id` | Realiza soft delete de um espaço | Dono / ADMIN |
 
 ### 📅 Reservas (`/bookings`)
 | Método | Endpoint | Descrição | Acesso |
 |---|---|---|---|
-| `POST` | `/bookings` | Solicita uma nova reserva de espaço | Autenticado |
-| `GET` | `/bookings/my-bookings` | Lista as reservas feitas pelo usuário como cliente | Cliente |
-| `GET` | `/bookings/host` | Lista as reservas recebidas nos espaços do usuário | Anfitrião |
-| `GET` | `/bookings?type=client\|host` | Listagem geral (todas as reservas se ADMIN) | Autenticado |
-| `GET` | `/bookings/space/:spaceId?date=YYYY-MM-DD` | Consulta disponibilidade e slots ocupados | Autenticado |
+| `POST` | `/bookings` | Solicita uma nova reserva de espaço | Autenticado (Verificado) |
+| `GET` | `/bookings/my-bookings` | Lista as reservas feitas pelo usuário como cliente | Cliente (Verificado) |
+| `GET` | `/bookings/host` | Lista as reservas recebidas nos espaços do usuário | Anfitrião (Verificado) |
+| `GET` | `/bookings?type=client\|host` | Listagem geral (todas as reservas se ADMIN) | Autenticado (Verificado) |
+| `GET` | `/bookings/space/:spaceId?date=YYYY-MM-DD` | Consulta disponibilidade e slots ocupados | Autenticado (Verificado) |
 | `GET` | `/bookings/:id` | Obtém detalhes completos e contrato da reserva | Participantes / ADMIN |
 | `PATCH` | `/bookings/:id` | Atualiza status (ex: aprovação do anfitrião ou cancelamento) | Participantes / ADMIN |
 | `POST` | `/bookings/:id/pay` | Executa o pagamento simulado e assina o contrato | Cliente da reserva |
@@ -226,9 +319,13 @@ Todas as requisições autenticadas requerem o header `Authorization: Bearer <to
 | Método | Endpoint | Descrição | Acesso |
 |---|---|---|---|
 | `GET` | `/profiles` | Lista todos os usuários da plataforma | Apenas ADMIN |
-| `GET` | `/profiles/:id` | Retorna o perfil de um usuário específico | Autenticado |
-| `PATCH` | `/profiles/:id` | Atualiza dados cadastrais (e papel se ADMIN) | Próprio / ADMIN |
-| `DELETE` | `/profiles/:id` | Bane/desativa um usuário (Soft Delete) | Apenas ADMIN |
+| `GET` | `/profiles/me` | Retorna os dados cadastrais do próprio perfil | Autenticado |
+| `PATCH` | `/profiles/me` | Atualiza dados do próprio perfil (nome, bio, avatar, telefone) | Autenticado |
+| `GET` | `/profiles/me/preferences` | Consulta preferências de privacidade e notificações | Autenticado |
+| `PATCH` | `/profiles/me/preferences` | Atualiza preferências de privacidade e notificações | Autenticado |
+| `GET` | `/profiles/:id` | Retorna o perfil de um usuário (respeitando privacidade do telefone) | Autenticado |
+| `PATCH` | `/profiles/:id` | Atualiza dados cadastrais e papel (`USER` / `ADMIN`) | Apenas ADMIN |
+| `DELETE` | `/profiles/:id` | Bane/desativa um usuário (Soft Delete com bloqueio de login) | Apenas ADMIN |
 | `PATCH` | `/profiles/:id/restore` | Reativa um usuário banido | Apenas ADMIN |
 
 ### 📊 Painéis e Métricas (`/dashboard`)
@@ -249,7 +346,7 @@ Todas as requisições autenticadas requerem o header `Authorization: Bearer <to
 | `GET` | `/notifications` | Lista notificações in-app paginadas e total não lido | Autenticado |
 | `PATCH` | `/notifications/:id/read` | Marca notificação específica como lida | Próprio |
 | `PATCH` | `/notifications/read-all` | Marca todas as notificações do usuário como lidas | Próprio |
-| `GET` | `/notifications/push/public-key` | Retorna a chave pública VAPID para registro | Autenticado |
+| `GET` | `/notifications/push/public-key` | Retorna a chave pública VAPID para registro no navegador | Autenticado |
 | `GET` | `/notifications/push/subscriptions` | Lista dispositivos com push ativo do usuário (sem segredos) | Próprio |
 | `POST` | `/notifications/push/subscribe` | Cadastra ou reativa assinatura Web Push deste dispositivo | Próprio |
 | `POST` | `/notifications/push/unsubscribe` | Cancela a assinatura push do dispositivo atual | Próprio |
@@ -289,6 +386,10 @@ Preencha as variáveis de acordo com suas credenciais locais:
 # Porta da API NestJS
 PORT=3000
 
+# URLs de Ambiente e CORS
+FRONTEND_URL="http://localhost:8080"
+VITE_API_URL="http://localhost:3000"
+
 # Conexão MySQL (Prisma ORM)
 DATABASE_URL="mysql://root:sua_senha@localhost:3306/agendaspace"
 
@@ -297,12 +398,28 @@ MONGODB_URI="mongodb://localhost:27017/agendaspace"
 
 # Autenticação JWT
 JWT_SECRET="agendaspace_super_secret_jwt_key_minimo_32_caracteres"
-JWT_EXPIRES_IN="7d"
 
 # Credenciais do Administrador Inicial (Seed)
-ADMIN_EMAIL="admin@agendaspace.com"
-ADMIN_PASSWORD="AdminPassword123!"
-ADMIN_NAME="Administrador Geral"
+ADMIN_EMAIL="admin@agendaspace.local"
+ADMIN_PASSWORD="Admin@123456"
+ADMIN_FULL_NAME="Administrador Geral"
+
+# Infraestrutura de Email (SMTP + Outbox Worker)
+# Compatível com Brevo (smtp-relay.brevo.com:587), Mailtrap ou SMTP local
+MAIL_HOST="smtp-relay.brevo.com"
+MAIL_PORT="587"
+MAIL_SECURE="false"
+MAIL_USER="seu_usuario_smtp"
+MAIL_PASS="sua_senha_smtp"
+MAIL_FROM="AgendaSpace <noreply@agendaspace.local>"
+MAIL_ENCRYPTION_KEY="uma_chave_secreta_super_segura_de_32_bytes_min"
+
+# Web Push Notifications (RFC 8030 / VAPID)
+# Gere com: node -e "const wp = require('web-push'); console.log(wp.generateVAPIDKeys());"
+VAPID_PUBLIC_KEY="sua_chave_publica_vapid_base64url"
+VAPID_PRIVATE_KEY="sua_chave_privada_vapid_base64url"
+VAPID_SUBJECT="mailto:contato@agendaspace.local"
+VITE_VAPID_PUBLIC_KEY="sua_chave_publica_vapid_base64url"
 ```
 
 ---
@@ -369,43 +486,63 @@ npm run typecheck
 ```
 AgendaSpace/
 ├── src/
-│   ├── auth/                 # Módulo de Autenticação JWT, DTOs, Guards e Estratégias
+│   ├── auth/                 # Módulo de Autenticação JWT, 2FA, Recuperação de Senha e Guards
 │   │   ├── decorators/       # @CurrentUser, @Roles
-│   │   ├── guards/           # JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard
-│   │   └── dto/              # LoginDto, RegisterDto
-│   ├── bookings/             # Módulo de Reservas, Concorrência e Pagamentos
+│   │   ├── guards/           # JwtAuthGuard, RolesGuard, VerifiedGuard, OptionalJwtAuthGuard
+│   │   ├── strategies/       # JwtStrategy (com verificação dinâmica de authVersion)
+│   │   └── dto/              # LoginDto, RegisterDto, 2faDto, PasswordDto, VerifyEmailDto
+│   ├── bookings/             # Módulo de Reservas, Concorrência ACID e Pagamentos
 │   ├── dashboard/            # Endpoints de Métricas, Estatísticas e Relatórios
 │   ├── feed/                 # Módulo de Feed Comunitário (MongoDB / Mongoose)
 │   │   └── schemas/          # Schemas Mongoose (Post, Comment, Like, Report, HiddenPost)
+│   ├── mail/                 # Módulo de Email (Outbox Worker, Templates HTML e Criptografia)
+│   │   ├── mail.service.ts   # Enfileiramento com idempotência (queueEmail)
+│   │   ├── mail.worker.ts    # Worker assíncrono com lease atômico e retries
+│   │   ├── mail.templates.ts # Templates responsivos com escape estrito
+│   │   └── crypto.util.ts    # Criptografia simétrica com chave AES
+│   ├── notifications/        # Módulo de Notificações In-App e Web Push
+│   │   ├── notifications.controller.ts # Endpoints REST de avisos in-app
+│   │   ├── push.service.ts   # Gestão de inscrições e despacho VAPID
+│   │   ├── push.worker.ts    # Worker de envio push via outbox
+│   │   └── push-validator.util.ts # Proteção contra SSRF e validação de URLs
 │   ├── spaces/               # Módulo de Espaços e Comodidades
 │   ├── upload/               # Serviço e Controller de Upload de Imagens com Multer
-│   ├── users/                # Módulo de Perfis, Soft Delete e Banimento de Usuários
+│   ├── users/                # Módulo de Perfis, Soft Delete, Banimento e Preferências
 │   ├── prisma/               # PrismaService global compartilhado
 │   ├── components/           # Componentes de UI em React
-│   │   ├── auth/             # Componentes de controle de acesso (ProtectedRoute)
+│   │   ├── auth/             # LoginForm (com 2FA e recuperação), RegisterForm, ProtectedRoute
 │   │   ├── bookings/         # BookingDetailsDialog, formulários de reserva
 │   │   ├── feed/             # NewPostInput com Câmera ao Vivo, PostCard, Comentários
+│   │   ├── notifications/    # NotificationsBell com contador e dropdown interativo
 │   │   ├── spaces/           # SpaceCard, SpaceImage com Fallback, Filtros
 │   │   └── ui/               # Componentes primitivos do shadcn/ui
-│   ├── contexts/             # AuthContext (gerenciamento global da sessão do usuário)
+│   ├── contexts/             # AuthContext (sessão, tokens, logout limpo com unsubscribe push)
 │   ├── hooks/                # Hooks customizados (useFileUpload, useToast, etc.)
-│   ├── lib/                  # Clientes de API tipados com Axios (spaces, bookings, feed, users)
+│   ├── lib/                  # Clientes de API tipados (auth, bookings, feed, push, notifications)
 │   ├── pages/                # Páginas da aplicação
 │   │   ├── admin/            # Telas do Administrador (Spaces, Bookings, Users, Reports)
 │   │   ├── host/             # Telas do Anfitrião (MySpaces, ReceivedBookings)
 │   │   ├── user/             # Telas do Cliente (Spaces, MyBookings)
-│   │   ├── Feed.tsx          # Feed Social
-│   │   ├── Dashboard.tsx     # Dashboard unificado
-│   │   └── Settings.tsx      # Configurações de Perfil e Conta
-│   ├── App.tsx               # Roteamento e Provedores Globais
-│   └── main.tsx              # Ponto de entrada do Frontend
+│   │   ├── CheckEmail.tsx    # Tela pós-cadastro para confirmação de e-mail
+│   │   ├── VerifyEmail.tsx   # Validação de token de confirmação de e-mail
+│   │   ├── ForgotPassword.tsx# Solicitação pública de recuperação de senha
+│   │   ├── ResetPassword.tsx # Redefinição atômica de senha com validação
+│   │   ├── Notifications.tsx # Central completa de notificações in-app
+│   │   ├── Settings.tsx      # Configurações de Perfil, 2FA, Troca de Senha e Privacidade
+│   │   ├── Feed.tsx          # Feed Social da comunidade
+│   │   └── Dashboard.tsx     # Dashboard unificado (cliente/anfitrião/admin)
+│   ├── App.tsx               # Roteamento global, guards de rota e TanStack Query
+│   └── main.tsx              # Ponto de entrada do Frontend com registro do SW
 ├── prisma/
-│   ├── schema.prisma         # Modelagem relacional do MySQL
+│   ├── schema.prisma         # Modelagem relacional do MySQL (Users, Outbox, Challenges, etc.)
 │   ├── migrations/           # Histórico de migrações versionadas
 │   └── seed.ts               # Script de povoamento inicial do ADMIN
 ├── public/
 │   ├── logo.svg              # Identidade visual da AgendaSpace
+│   ├── manifest.webmanifest  # Manifesto PWA para instalação standalone
+│   ├── sw.js                 # Service Worker para captura e exibição de Web Push
 │   └── uploads/              # Armazenamento local de mídias (spaces, avatars, feed)
+├── test/                     # Testes automatizados (validação de recuperação de senha, etc.)
 ├── docs/                     # Documentação técnica e relatórios de validação
 ├── package.json              # Dependências e scripts de automação
 ├── tailwind.config.ts        # Configuração do TailwindCSS e tokens de design
@@ -437,6 +574,21 @@ AgendaSpace/
 1. **Proteção contra Escalação de Privilégios:** Usuários não-administradores não conseguem alterar seus próprios papéis (`role`) em requisições de atualização de perfil.
 2. **Proteção do Último Administrador:** O sistema bloqueia a desativação ou rebaixamento de papel caso reste apenas um administrador ativo.
 3. **Soft Delete de Usuários:** Usuários banidos têm seus tokens rejeitados em tempo de autenticação (`auth.service.ts`) e seus dados são preservados para fins de auditoria.
+4. **Recuperação de Senha Segura e Imunidade a Concorrência:**
+   - Tokens criptográficos de alta entropia (32 bytes) com digest SHA-256 no banco e validade de 30 minutos.
+   - Consumo atômico condicional via `tx.authChallenge.updateMany({ where: { tokenDigest, consumedAt: null } })` que garante imunidade contra resgates concorrentes (race condition mitigada em 100%).
+   - Respostas anti-enumeração genéricas e indistinguíveis para prevenir detecção de contas cadastradas.
+   - Incremento atômico de `authVersion` no usuário, invalidando instantaneamente qualquer token JWT emitido previamente.
+   - Preservação estrita de integridade (`role`, `emailVerifiedAt`, `isDeleted`, `isTwoFactorEnabled`).
+   - Proibição de auto-login após redefinição, forçando nova autenticação que respeita o fluxo de 2FA se habilitado.
+5. **Autenticação em Dois Fatores (2FA por E-mail):**
+   - Interceptação de login com retorno de `requires2fa: true` e emissão de código OTP temporário de 6 dígitos.
+   - Emissão de 8 códigos de recuperação de uso único (digests SHA-256) gerados na ativação do 2FA, permitindo resgate em caso de perda de acesso ao e-mail.
+6. **Verificação Obrigatória de E-mail (`VerifiedGuard`):**
+   - Operações críticas (publicação de anúncios, solicitação e gestão de reservas) são protegidas por guard que exige `emailVerifiedAt` preenchido.
+7. **Padrão Transacional Outbox para E-mails:**
+   - Desacoplamento entre chamadas de API e envios SMTP via tabela `email_outbox`.
+   - Processamento em segundo plano com lease atômico (`locked_until`), limite de 3 tentativas com backoff progressivo e sanitização de HTML (`escapeHtml`).
 
 ### Notas Acadêmicas
 - **Pagamentos Simulados:** As modalidades PIX e Cartão de Crédito funcionam como simulações para fins acadêmicos e de validação de fluxo — **nenhum dado bancário real é processado ou faturado**.
